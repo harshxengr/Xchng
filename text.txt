@@ -1,7 +1,9 @@
-Building Exchange App from scratch
+1. Building Exchange App from scratch
 
 initialize project: pnpm dlx shadcn@canary init
 
 installed turbo globally: pnpm add turbo --global
 
 added shadcn button: pnpm dlx shadcn@canary add button
+
+2. creating database
