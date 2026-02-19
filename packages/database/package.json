@@ -1,22 +1,25 @@
 {
   "name": "@workspace/database",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:deploy": "prisma migrate deploy"
+    "db:migrate": "prisma migrate dev --skip-generate",
+    "db:deploy": "prisma migrate deploy",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "check-types": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/pg": "^8.16.0",
     "prisma": "^7.4.0"
   },
   "dependencies": {
-    "@prisma/adapter-neon": "^7.4.0",
     "@prisma/adapter-pg": "^7.4.0",
     "@prisma/client": "^7.4.0",
+    "@prisma/client-runtime-utils": "^7.4.0",
     "dotenv": "^17.3.1",
     "pg": "^8.18.0"
   }
