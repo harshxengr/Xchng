@@ -1,7 +1,7 @@
-import { Geist, Geist_Mono } from "next/font/google"
-
-import "@workspace/ui/globals.css"
-import { Providers } from "@/components/providers"
+import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata } from "next";
+import "@workspace/ui/globals.css";
+import { Providers } from "@/components/providers";
 
 const fontSans = Geist({
   subsets: ["latin"],
@@ -12,6 +12,11 @@ const fontMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
 })
+
+export const metadata: Metadata = {
+  title: "Xchng",
+  description: "A exchange app",
+};
 
 export default function RootLayout({
   children,
