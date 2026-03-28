@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionCookie } from "better-auth/cookies";
 
 export async function middleware(request: NextRequest) {
-    const sessionCookie = getSessionCookie(request);
+    const sessionCookie =
+        request.cookies.get("better-auth.session_token") ||
+        request.cookies.get("__Secure-better-auth.session_token");
 
     if (!sessionCookie) {
         const signInUrl = new URL("/sign-in", request.url);
-        // preserve the original URL so we can redirect back after login
         signInUrl.searchParams.set("callbackUrl", request.nextUrl.pathname);
         return NextResponse.redirect(signInUrl);
     }
@@ -19,6 +19,5 @@ export const config = {
         "/dashboard/:path*",
         "/settings/:path*",
         "/profile/:path*",
-        // add more protected routes here
     ],
 };

@@ -1,56 +1,58 @@
 import { betterAuth } from "better-auth";
+import { getSessionCookie } from "better-auth/cookies";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { prisma } from "@workspace/database";
+
+export { getSessionCookie };
 
 export const auth = betterAuth({
     database: prismaAdapter(prisma, {
         provider: "postgresql",
     }),
 
-    // Email + Password auth
     emailAndPassword: {
         enabled: true,
-        requireEmailVerification: true,
+        requireEmailVerification: false,
     },
 
-    // OAuth Social providers — add what you need
     socialProviders: {
-        google: {
-            clientId: process.env.GOOGLE_CLIENT_ID!,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-        }
+        ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+            ? {
+                  google: {
+                      clientId: process.env.GOOGLE_CLIENT_ID,
+                      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+                  },
+              }
+            : {}),
     },
 
-    // Email verification config
     emailVerification: {
         sendVerificationEmail: async ({ user, url }) => {
-            // plug in your email sender here (Resend, Nodemailer, etc.)
-            console.log(`Send verification email to ${user.email}: ${url}`);
+            if (process.env.NODE_ENV === "development") {
+                console.info(`[auth] verification link for ${user.email}: ${url}`);
+            }
         },
+        autoSignInAfterVerification: true,
     },
 
-    // Session config
     session: {
-        expiresIn: 60 * 60 * 24 * 7, // 7 days
-        updateAge: 60 * 60 * 24,     // refresh if older than 1 day
+        expiresIn: 60 * 60 * 24 * 7,
+        updateAge: 60 * 60 * 24,
         cookieCache: {
             enabled: true,
-            maxAge: 5 * 60,            // cache session in cookie for 5 min
+            maxAge: 5 * 60,
         },
     },
 
-    // Trusted origins — add all your app origins
     trustedOrigins: [
         process.env.NEXT_PUBLIC_APP_URL!,
         "http://localhost:3000",
-        "http://localhost:4000", // express
+        "http://localhost:4000",
     ],
 
-    // IMPORTANT: nextCookies must be last in plugins array
     plugins: [nextCookies()],
 });
 
-// Export inferred types — used everywhere in your apps
 export type Session = typeof auth.$Infer.Session;
 export type User = typeof auth.$Infer.Session.user;
