@@ -1,0 +1,21 @@
+{
+  "name": "@workspace/types",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@workspace/typescript-config": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}

@@ -8,9 +8,7 @@ export function SignUpForm() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState(false);
 
-    // ── Email + Password Sign Up ──────────────────────────────
     const handleSignUp = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setError(null);
@@ -45,13 +43,10 @@ export function SignUpForm() {
             return;
         }
 
-        // If email verification is required, show success message
-        // Otherwise redirect to dashboard
-        setSuccess(true);
-        setIsLoading(false);
+        router.push("/dashboard");
+        router.refresh();
     };
 
-    // ── Social Sign Up ────────────────────────────────────────
     const handleSocialSignUp = async (provider: "google" | "github") => {
         setError(null);
         setIsLoading(true);
@@ -59,7 +54,7 @@ export function SignUpForm() {
         const { error } = await authClient.signIn.social({
             provider,
             callbackURL: "/dashboard",
-            newUserCallbackURL: "/dashboard", // redirect new users here
+            newUserCallbackURL: "/dashboard",
             errorCallbackURL: "/sign-up?error=oauth",
         });
 
@@ -69,27 +64,8 @@ export function SignUpForm() {
         }
     };
 
-    // ── Email Verification Sent State ─────────────────────────
-    if (success) {
-        return (
-            <div className="text-center py-4">
-                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                </div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-2">Check your email</h2>
-                <p className="text-sm text-gray-500">
-                    We sent a verification link to your email address. Click the link to
-                    activate your account.
-                </p>
-            </div>
-        );
-    }
-
     return (
         <div className="space-y-4">
-            {/* Social buttons */}
             <div className="space-y-2">
                 <button
                     type="button"
@@ -107,7 +83,6 @@ export function SignUpForm() {
                 </button>
             </div>
 
-            {/* Divider */}
             <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-gray-200" />
@@ -117,7 +92,6 @@ export function SignUpForm() {
                 </div>
             </div>
 
-            {/* Email + Password form */}
             <form onSubmit={handleSignUp} className="space-y-3">
                 <div>
                     <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
@@ -183,7 +157,6 @@ export function SignUpForm() {
                     />
                 </div>
 
-                {/* Error message */}
                 {error && (
                     <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
                         <p className="text-sm text-red-600">{error}</p>

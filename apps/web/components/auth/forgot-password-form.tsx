@@ -15,9 +15,9 @@ export function ForgotPasswordForm() {
 
         const form = new FormData(e.currentTarget);
 
-        const { error } = await authClient.forgetPassword({
+        const { error } = await authClient.requestPasswordReset({
             email: form.get("email") as string,
-            redirectTo: "/reset-password", // Better Auth will append the token
+            redirectTo: "/reset-password",
         });
 
         if (error) {
