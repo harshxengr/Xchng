@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@workspace/database": "workspace:*",
+    "@workspace/env": "workspace:*",
     "better-auth": "^1.4.18"
   },
   "devDependencies": {

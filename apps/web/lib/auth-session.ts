@@ -10,9 +10,9 @@ import { cache } from "react";
  * even if used in multiple RSCs in the same render tree.
  */
 export const getSession = cache(async (): Promise<Session | null> => {
-    return await auth.api.getSession({
-        headers: await headers(),
-    });
+  return auth.api.getSession({
+    headers: await headers(),
+  });
 });
 
 /**
@@ -20,9 +20,13 @@ export const getSession = cache(async (): Promise<Session | null> => {
  * Use this in protected pages and layouts.
  */
 export async function requireSession(): Promise<Session> {
-    const session = await getSession();
-    if (!session) redirect("/sign-in");
-    return session;
+  const session = await getSession();
+
+  if (!session) {
+    redirect("/sign-in");
+  }
+
+  return session;
 }
 
 /**
@@ -30,6 +34,9 @@ export async function requireSession(): Promise<Session> {
  * Use this in sign-in / sign-up pages so logged-in users can't see them.
  */
 export async function requireGuest(): Promise<void> {
-    const session = await getSession();
-    if (session) redirect("/dashboard");
+  const session = await getSession();
+
+  if (session) {
+    redirect("/dashboard");
+  }
 }
