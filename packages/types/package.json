@@ -1,15 +1,21 @@
 {
   "name": "@workspace/types",
   "version": "1.0.0",
-  "main": "src/index.ts",
-  "scripts": {
-    "check-types": "tsc --noEmit"
-  },
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'no tests for @workspace/types'",
+    "lint": "echo 'lint not configured for @workspace/types'"
   },
   "dependencies": {
     "zod": "^3.25.76"

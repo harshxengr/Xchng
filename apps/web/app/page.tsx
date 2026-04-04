@@ -18,7 +18,6 @@ export default async function HomePage() {
             ? `Connected user: ${user.name}`
             : "No user has been created in the database yet."}
         </p>
-        <Button>Open app</Button>
       </section>
     </main>
   );
