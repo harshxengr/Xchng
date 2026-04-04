@@ -1,0 +1,25 @@
+{
+  "name": "engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "echo 'lint not configured for engine'"
+  },
+  "dependencies": {
+    "@workspace/env": "workspace:*",
+    "@workspace/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@workspace/typescript-config": "workspace:*",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  }
+}
