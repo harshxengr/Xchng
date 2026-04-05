@@ -17,6 +17,29 @@ export type Fill = {
     makerOrderId: string;
 };
 
+export type Trade = {
+    tradeId: number;
+    market: string;
+    price: number;
+    quantity: number;
+    buyerUserId: string;
+    sellerUserId: string;
+    timestamp: number;
+};
+
+export type Ticker = {
+    symbol: string;
+    lastPrice: string;
+    high: string;
+    low: string;
+    volume: string;
+    quoteVolume: string;
+    firstPrice: string;
+    priceChange: string;
+    priceChangePercent: string;
+    trades: number;
+};
+
 export type PlaceOrderInput = {
     market: string;
     userId: string;
