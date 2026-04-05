@@ -269,4 +269,160 @@ describe("Engine", () => {
 
     expect(() => engine.cancelOrder("TATA_INR", "missing")).toThrow("Order not found");
   });
+
+  it("records trade history after a match", () => {
+    const engine = new Engine();
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "2",
+      side: "sell",
+      price: 100,
+      quantity: 10
+    });
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "1",
+      side: "buy",
+      price: 100,
+      quantity: 4
+    });
+
+    const trades = engine.getTrades("TATA_INR");
+
+    expect(trades).toHaveLength(1);
+    expect(trades[0]).toMatchObject({
+      market: "TATA_INR",
+      price: 100,
+      quantity: 4,
+      buyerUserId: "1",
+      sellerUserId: "2"
+    });
+  });
+
+  it("records multiple trades in reverse chronological order", async () => {
+    const engine = new Engine();
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "2",
+      side: "sell",
+      price: 100,
+      quantity: 2
+    });
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "1",
+      side: "buy",
+      price: 100,
+      quantity: 2
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 2));
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "2",
+      side: "sell",
+      price: 101,
+      quantity: 3
+    });
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "1",
+      side: "buy",
+      price: 101,
+      quantity: 3
+    });
+
+    const trades = engine.getTrades("TATA_INR");
+
+    expect(trades).toHaveLength(2);
+    expect(trades[0]?.price).toBe(101);
+    expect(trades[1]?.price).toBe(100);
+  });
+
+  it("returns empty ticker values when market has no trades", () => {
+    const engine = new Engine();
+
+    const ticker = engine.getTicker("TATA_INR");
+
+    expect(ticker).toEqual({
+      symbol: "TATA_INR",
+      lastPrice: "0",
+      high: "0",
+      low: "0",
+      volume: "0",
+      quoteVolume: "0",
+      firstPrice: "0",
+      priceChange: "0",
+      priceChangePercent: "0",
+      trades: 0
+    });
+  });
+
+  it("builds ticker stats from recorded trades", async () => {
+    const engine = new Engine();
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "2",
+      side: "sell",
+      price: 100,
+      quantity: 2
+    });
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "1",
+      side: "buy",
+      price: 100,
+      quantity: 2
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 2));
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "2",
+      side: "sell",
+      price: 110,
+      quantity: 3
+    });
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "1",
+      side: "buy",
+      price: 110,
+      quantity: 3
+    });
+
+    const ticker = engine.getTicker("TATA_INR");
+
+    expect(ticker.symbol).toBe("TATA_INR");
+    expect(ticker.firstPrice).toBe("100");
+    expect(ticker.lastPrice).toBe("110");
+    expect(ticker.high).toBe("110");
+    expect(ticker.low).toBe("100");
+    expect(ticker.volume).toBe("5");
+    expect(ticker.quoteVolume).toBe("530");
+    expect(ticker.priceChange).toBe("10");
+    expect(ticker.priceChangePercent).toBe("10");
+    expect(ticker.trades).toBe(2);
+  });
+
+  it("returns all tickers for all markets", () => {
+    const engine = new Engine();
+    engine.createMarket("INFY_INR");
+
+    const tickers = engine.getTickers();
+
+    expect(tickers.map((t) => t.symbol).sort()).toEqual(["INFY_INR", "TATA_INR"]);
+  });
+
+
 });
