@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "pnpm --filter @workspace/ws build && tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "build": "tsc -p tsconfig.json"
+    "build": "pnpm --filter @workspace/ws build && tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@workspace/database": "workspace:*",
     "@workspace/types": "workspace:*",
+    "@workspace/ws": "workspace:*",
     "cors": "^2.8.6",
     "engine": "workspace:*",
     "express": "^5.2.1"
