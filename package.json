@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "build": "turbo build",
-    "dev": "turbo dev",
+    "dev": "turbo run dev",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "db:setup": "docker exec -i xchng-postgres psql -U postgres -d xchng < schema.sql",
     "lint": "turbo lint",
     "check-types": "turbo check-types",
     "format": "prettier --write \"**/*.{ts,tsx,md}\""

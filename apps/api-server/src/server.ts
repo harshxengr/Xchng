@@ -1,194 +1,187 @@
 import { createServer } from "node:net";
 import express from "express";
 import cors from "cors";
-import type { Response } from "express";
-import { env } from "@workspace/env";
-import { Engine } from "engine";
-import { WsManager } from "@workspace/ws";
-import {
-    balancesQuerySchema,
-    cancelOrderSchema,
-    depositSchema,
-    depthQuerySchema,
-    openOrdersQuerySchema,
-    placeOrderSchema,
-    tradesQuerySchema,
-    tickerQuerySchema
-} from "@workspace/types";
-import { prisma } from "@workspace/database";
-import { PersistedTickerInput } from "@workspace/types";
-import { toTickerCreateInput } from "./lib/mappers.js";
+import crypto from "node:crypto";
+import { 
+  createRedisClient, 
+  REDIS_CHANNELS, 
+  REDIS_KEYS,
+  getLatestTickers,
+  getLatestTickerByMarket,
+  getRecentTrades,
+  ensureAndLoadBalances,
+  getOpenOrdersForUser,
+  getOrderHistory,
+  query
+} from "@workspace/shared";
+import type { PlaceOrderInput, EngineCommandResult } from "@workspace/shared";
 
 const app = express();
-const defaultPort = env.PORT ?? 4000;
-const defaultWsPort = env.WS_PORT ?? 4001;
+const port = process.env.PORT || 4000;
 
-const engine = new Engine();
-const ws = new WsManager(defaultWsPort);
+// Use a shared publisher for all commands
+const redisPublisher = createRedisClient();
 
 app.use(cors());
 app.use(express.json());
 
-app.get("/health", (_req, res) => {
-    res.json({ ok: true });
-});
+// --- INTERNAL HELPERS ---
 
+/**
+ * Simplified RPC over Redis.
+ * Sends a command to the engine and waits for a response on a unique channel.
+ */
+async function sendCommandToEngine<T>(type: string, payload: any): Promise<T> {
+    const requestId = crypto.randomUUID();
+    const responseChannel = REDIS_CHANNELS.rpcResponse(requestId);
+    
+    // Create a temporary subscriber for this request
+    const subscriber = createRedisClient();
+    await subscriber.subscribe(responseChannel);
 
-export async function saveTickerSnapshot(ticker: PersistedTickerInput) {
-    await prisma.tickerSnapshot.create({
-        data: toTickerCreateInput(ticker)
-    });
-}
+    return new Promise<T>((resolve, reject) => {
+        const timeout = setTimeout(async () => {
+            await subscriber.unsubscribe(responseChannel);
+            subscriber.disconnect();
+            reject(new Error("Engine timeout"));
+        }, 5000);
 
-export async function getLatestTickers() {
-    return prisma.tickerSnapshot.findMany({
-        orderBy: { timestamp: "desc" }
-    });
-}
+        subscriber.on("message", async (channel, message) => {
+            if (channel === responseChannel) {
+                clearTimeout(timeout);
+                await subscriber.unsubscribe(responseChannel);
+                subscriber.disconnect();
 
-app.delete("/api/v1/order", (req, res) => {
-    try {
-        const input = cancelOrderSchema.parse(req.body);
-        const result = engine.cancelOrder(input.market, input.orderId);
-
-        const depth = engine.getDepth(input.market);
-        const ticker = engine.getTicker(input.market);
-
-        ws.broadcastDepth(input.market, depth);
-        ws.broadcastTicker(input.market, ticker);
-
-        res.json(result);
-    } catch (error) {
-        handleError(res, error);
-    }
-});
-
-app.get("/api/v1/order/open", (req, res) => {
-    try {
-        const input = openOrdersQuerySchema.parse(req.query);
-        res.json(engine.getOpenOrders(input.market, input.userId));
-    } catch (error) {
-        handleError(res, error);
-    }
-});
-
-app.get("/api/v1/depth", (req, res) => {
-    try {
-        const input = depthQuerySchema.parse(req.query);
-        res.json(engine.getDepth(input.symbol));
-    } catch (error) {
-        handleError(res, error);
-    }
-});
-
-app.get("/api/v1/trades", (req, res) => {
-    try {
-        const input = tradesQuerySchema.parse(req.query);
-        res.json(engine.getTrades(input.symbol));
-    } catch (error) {
-        handleError(res, error);
-    }
-});
-
-app.get("/api/v1/ticker", (req, res) => {
-    try {
-        const input = tickerQuerySchema.parse(req.query);
-        res.json(engine.getTicker(input.symbol));
-    } catch (error) {
-        handleError(res, error);
-    }
-});
-
-app.get("/api/v1/tickers", (_req, res) => {
-    try {
-        res.json(engine.getTickers());
-    } catch (error) {
-        handleError(res, error);
-    }
-});
-
-app.get("/api/v1/balances", (req, res) => {
-    try {
-        const input = balancesQuerySchema.parse(req.query);
-        res.json(engine.getBalances(input.userId));
-    } catch (error) {
-        handleError(res, error);
-    }
-});
-
-app.post("/api/v1/deposit", (req, res) => {
-    try {
-        const input = depositSchema.parse(req.body);
-        engine.deposit(input.userId, input.asset, input.amount);
-        res.json({
-            success: true,
-            balances: engine.getBalances(input.userId)
-        });
-    } catch (error) {
-        handleError(res, error);
-    }
-});
-
-function handleError(res: Response, error: unknown): void {
-    if (error instanceof Error) {
-        res.status(400).json({
-            success: false,
-            error: error.message
-        });
-        return;
-    }
-
-    res.status(500).json({
-        success: false,
-        error: "Internal server error"
-    });
-}
-
-async function isPortAvailable(port: number): Promise<boolean> {
-    return new Promise((resolve) => {
-        const server = createServer();
-
-        server.once("error", () => {
-            resolve(false);
-        });
-
-        server.once("listening", () => {
-            server.close(() => resolve(true));
-        });
-
-        server.listen(port);
-    });
-}
-
-async function findAvailablePort(startPort: number, label: string, blockedPorts: number[] = []): Promise<number> {
-    for (let offset = 0; offset < 20; offset += 1) {
-        const candidate = startPort + offset;
-        if (blockedPorts.includes(candidate)) {
-            continue;
-        }
-        if (await isPortAvailable(candidate)) {
-            if (candidate !== startPort) {
-                console.warn(`${label} port ${startPort} is busy, using ${candidate} instead`);
+                const result = JSON.parse(message) as EngineCommandResult<T>;
+                if (result.ok) {
+                    resolve(result.data!);
+                } else {
+                    reject(new Error(result.error || "Engine error"));
+                }
             }
-            return candidate;
-        }
-    }
+        });
 
-    throw new Error(`No available ${label.toLowerCase()} port found starting from ${startPort}`);
-}
-
-async function start(): Promise<void> {
-    const port = await findAvailablePort(defaultPort, "API");
-    const wsPort = await findAvailablePort(defaultWsPort, "WS", [port]);
-    const ws = new WsManager(wsPort);
-
-    app.listen(port, () => {
-        console.log(`API running on http://localhost:${port}`);
-        console.log(`WS running on ws://localhost:${wsPort}`);
+        // Send the command to the engine's queue
+        redisPublisher.rpush(REDIS_CHANNELS.COMMANDS, JSON.stringify({
+            type,
+            requestId,
+            payload
+        }));
     });
 }
 
-start().catch((error) => {
-    console.error("Failed to start api-server", error);
-    process.exit(1);
+// --- API ROUTES ---
+
+app.get("/health", (req, res) => res.json({ ok: true }));
+
+// Orders
+app.post("/api/v1/order", async (req, res) => {
+    try {
+        const result = await sendCommandToEngine("PLACE_ORDER", req.body);
+        res.json(result);
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.delete("/api/v1/order", async (req, res) => {
+    try {
+        const result = await sendCommandToEngine("CANCEL_ORDER", req.body);
+        res.json(result);
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.get("/api/v1/order/open", async (req, res) => {
+    try {
+        const { market, userId } = req.query as { market: string, userId: string };
+        const orders = await getOpenOrdersForUser(market, userId);
+        res.json(orders.map(o => ({
+            orderId: o.id,
+            userId: o.userId,
+            side: o.side,
+            price: Number(o.price),
+            quantity: Number(o.quantity),
+            filled: Number(o.filledQuantity)
+        })));
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.get("/api/v1/order/history", async (req, res) => {
+    try {
+        const { userId, market, limit = "50" } = req.query as any;
+        const orders = await getOrderHistory({ userId, market, limit: parseInt(limit) });
+        res.json(orders);
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+// Market Data
+app.get("/api/v1/depth", async (req, res) => {
+    try {
+        const { symbol } = req.query as { symbol: string };
+        const data = await redisPublisher.get(REDIS_KEYS.depth(symbol));
+        res.json(data ? JSON.parse(data) : { bids: [], asks: [] });
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.get("/api/v1/trades", async (req, res) => {
+    try {
+        const { symbol } = req.query as { symbol: string };
+        const trades = await getRecentTrades(symbol);
+        res.json(trades);
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.get("/api/v1/ticker", async (req, res) => {
+    try {
+        const { symbol } = req.query as { symbol: string };
+        const ticker = await getLatestTickerByMarket(symbol);
+        res.json(ticker || { symbol, lastPrice: "0" });
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.get("/api/v1/tickers", async (req, res) => {
+    try {
+        const tickers = await getLatestTickers();
+        res.json(tickers);
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+// User
+app.get("/api/v1/balances", async (req, res) => {
+    try {
+        const { userId } = req.query as { userId: string };
+        const balances = await ensureAndLoadBalances(userId);
+        res.json(balances);
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.post("/api/v1/deposit", async (req, res) => {
+    try {
+        const result = await sendCommandToEngine("DEPOSIT", req.body);
+        res.json(result);
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+// --- SERVER START ---
+
+app.listen(port, () => {
+    console.log(`API Server running on port ${port}`);
 });

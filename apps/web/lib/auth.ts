@@ -1,22 +1,22 @@
+import "server-only";
+
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
-import { getSessionCookie } from "better-auth/cookies";
-import { getPool } from "@workspace/shared";
-
-export { getSessionCookie };
+import { pool } from "@workspace/database";
+import { env } from "@workspace/env";
 
 const googleSocialProvider =
-  process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+  env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
     ? {
         google: {
-          clientId: process.env.GOOGLE_CLIENT_ID,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          clientId: env.GOOGLE_CLIENT_ID,
+          clientSecret: env.GOOGLE_CLIENT_SECRET,
         },
       }
     : {};
 
 export const auth = betterAuth({
-  database: getPool(),
+  database: pool,
 
   emailAndPassword: {
     enabled: true,
@@ -27,7 +27,7 @@ export const auth = betterAuth({
 
   emailVerification: {
     sendVerificationEmail: async ({ user, url }) => {
-      if (process.env.NODE_ENV === "development") {
+      if (env.NODE_ENV === "development") {
         console.info(`[auth] verification link for ${user.email}: ${url}`);
       }
     },
@@ -43,14 +43,9 @@ export const auth = betterAuth({
     },
   },
 
-  trustedOrigins: [
-    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-    "http://localhost:3000",
-    "http://localhost:4000",
-  ],
+  trustedOrigins: [env.NEXT_PUBLIC_APP_URL, "http://localhost:3000", "http://localhost:4000"],
 
   plugins: [nextCookies()],
 });
 
 export type Session = typeof auth.$Infer.Session;
-export type User = typeof auth.$Infer.Session.user;

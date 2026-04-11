@@ -1,36 +1,56 @@
-# Xchng
+Xchng is a distributed crypto exchange monorepo built with performance and simplicity in mind.
 
-Xchng is a pnpm monorepo with:
+## Architecture
 
-- `apps/web`: Next.js frontend with Better Auth integration
-- `apps/api-server`: Express API for order placement and matching
-- `packages/auth`: shared Better Auth configuration
-- `packages/database`: Prisma client and database helpers
-- `packages/env`: shared environment loading and validation
-- `packages/types`: shared Zod schemas and TypeScript types
-- `packages/ui`: shared UI components and styles
+- **apps/web**: Next.js frontend with Better Auth integration.
+- **apps/api-server**: Express API for order placement, communicating with the engine via Redis.
+- **apps/engine**: High-performance matching engine worker.
+- **apps/db-worker**: Subscribes to engine events and persists state to PostgreSQL.
+- **apps/ws**: Standalone WebSocket service for real-time orderbook, trade, and ticker updates.
+- **packages/database**: Raw `pg` pool connection for shared DB access.
+- **packages/exchange-store**: Direct SQL-based store for all trading logic.
+- **packages/redis**: Shared Redis client and channel constants.
 
 ## Getting Started
 
+### 1. Environment Setup
+
+Copy the example environment file and fill in required values:
+
 ```bash
-pnpm install
+cp .env.example .env
+```
+
+### 2. Infrastructure Startup
+
+Start the required services (PostgreSQL and Redis) using Docker:
+
+```bash
+pnpm infra:up
+```
+
+### 3. Database Initialization
+
+Initialize the database schema with the provided SQL file:
+
+```bash
+pnpm db:setup
+```
+
+### 4. Run Development Server
+
+Start all services in development mode:
+
+```bash
 pnpm dev
 ```
 
-## Common Commands
+## Maintenance Commands
 
-```bash
-pnpm dev
-pnpm check-types
-pnpm --filter web lint
-```
-
-## Environment
-
-Copy the root example file and fill in the required values:
-
-```bash
-cp .env.example .env.local
-```
-
-Environment values are loaded and validated through `@workspace/env`, which is shared across the apps and packages.
+| Command | Action |
+| --- | --- |
+| `pnpm infra:up` | Starts Postgres & Redis containers in background |
+| `pnpm infra:down` | Stops and removes infrastructure containers |
+| `pnpm db:setup` | Re-initializes database schema (caution: does not drop existing data if using IF NOT EXISTS, but meant for setup) |
+| `pnpm build` | Builds all packages and apps |
+| `pnpm check-types` | Runs type checks across the entire monorepo |
