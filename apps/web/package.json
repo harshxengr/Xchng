@@ -12,9 +12,8 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@workspace/shared": "workspace:*",
     "@workspace/auth": "workspace:*",
-    "@workspace/database": "workspace:*",
-    "@workspace/env": "workspace:*",
     "@workspace/ui": "workspace:*",
     "better-auth": "^1.4.18",
     "lucide-react": "^0.563.0",

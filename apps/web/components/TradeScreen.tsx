@@ -159,8 +159,8 @@ export function TradeScreen({ market }: { market: string }) {
     const askLevels = depth.asks.slice(0, 8);
     const bidLevels = depth.bids.slice(0, 8);
 
-    const askMaxQuantity = askLevels.reduce((max, [, qty]) => Math.max(max, Number(qty)), 0);
-    const bidMaxQuantity = bidLevels.reduce((max, [, qty]) => Math.max(max, Number(qty)), 0);
+    const askMaxQuantity = askLevels.reduce((max: number, [, qty]) => Math.max(max, Number(qty)), 0);
+    const bidMaxQuantity = bidLevels.reduce((max: number, [, qty]) => Math.max(max, Number(qty)), 0);
     const depthMaxQuantity = Math.max(askMaxQuantity, bidMaxQuantity, 1);
 
     const tradeCountLabel = `${trades.length} prints`;
@@ -595,7 +595,7 @@ export function TradeScreen({ market }: { market: string }) {
                                         {askLevels.length === 0 ? (
                                             <div className="px-2 py-10 text-center text-sm text-slate-500">No asks yet</div>
                                         ) : (
-                                            askLevels.map(([levelPrice, levelQty]) => {
+                                            askLevels.map(([levelPrice, levelQty]: [string, string]) => {
                                                 const quantityValue = Number(levelQty);
                                                 const depthWidth = `${Math.max((quantityValue / depthMaxQuantity) * 100, 6)}%`;
 
@@ -625,7 +625,7 @@ export function TradeScreen({ market }: { market: string }) {
                                         {bidLevels.length === 0 ? (
                                             <div className="px-2 py-10 text-center text-sm text-slate-500">No bids yet</div>
                                         ) : (
-                                            bidLevels.map(([levelPrice, levelQty]) => {
+                                            bidLevels.map(([levelPrice, levelQty]: [string, string]) => {
                                                 const quantityValue = Number(levelQty);
                                                 const depthWidth = `${Math.max((quantityValue / depthMaxQuantity) * 100, 6)}%`;
 

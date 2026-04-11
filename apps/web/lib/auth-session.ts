@@ -40,3 +40,17 @@ export async function requireGuest(): Promise<void> {
     redirect("/dashboard");
   }
 }
+const OPERATOR_EMAILS = (process.env.OPERATOR_EMAILS || "admin@example.com").split(",");
+
+export function isOperatorSession(session: Session | null): boolean {
+  if (!session) return false;
+  return OPERATOR_EMAILS.includes(session.user.email);
+}
+
+export async function requireOperatorSession(): Promise<Session> {
+  const session = await requireSession();
+  if (!isOperatorSession(session)) {
+    redirect("/dashboard");
+  }
+  return session;
+}

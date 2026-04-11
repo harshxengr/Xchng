@@ -1,17 +1,27 @@
 import crypto from "node:crypto";
-import { Orderbook } from "./Orderbook.js";
-import type {
+import { 
+  query,
+  saveOrder,
+  markOrderCancelled,
+  upsertUserBalances,
+  ensureAndLoadBalances
+} from "@workspace/shared";
+import type { 
+  Order, 
+  Side, 
+  Trade, 
+  Ticker, 
+  Fill, 
+  PlaceOrderInput, 
+  PlaceOrderResult, 
   CancelOrderResult,
-  Fill,
-  Order,
-  PlaceOrderInput,
-  PlaceOrderResult,
-  Side,
-  Trade,
-  UserBalance,
-  Ticker
-} from "@workspace/types";
+  UserBalance
+} from "@workspace/shared";
 
+/**
+ * A simplified matching engine that maintains orderbooks in memory.
+ * It handles matching bids and asks, tracking balances, and calculating tickers.
+ */
 export class Engine {
   private orderbooks: Map<string, Orderbook>;
   private balances: Map<string, UserBalance>;
@@ -22,106 +32,44 @@ export class Engine {
     this.balances = new Map();
     this.trades = new Map();
 
+    // Default market
     this.createMarket("TATA_INR");
-
-    this.deposit("1", "INR", 1_000_000);
-    this.deposit("1", "TATA", 1_000);
-
-    this.deposit("2", "INR", 1_000_000);
-    this.deposit("2", "TATA", 1_000);
-
-    this.deposit("5", "INR", 1_000_000);
-    this.deposit("5", "TATA", 1_000);
   }
 
-  createMarket(market: string): void {
+  createMarket(market: string) {
     if (this.orderbooks.has(market)) return;
-    const [baseAsset, quoteAsset] = this.splitMarket(market);
-    this.orderbooks.set(market, new Orderbook(baseAsset, quoteAsset));
+    const [base, quote] = this.splitMarket(market);
+    this.orderbooks.set(market, new Orderbook(base, quote));
     this.trades.set(market, []);
   }
 
-  deposit(userId: string, asset: string, amount: number): void {
-    const user = this.getOrCreateUserBalance(userId);
-    const balance = this.getOrCreateAssetBalance(user, asset);
-    balance.available += amount;
-  }
+  // --- BALANCE METHODS ---
 
   getBalances(userId: string): UserBalance {
-    return structuredClone(this.getOrCreateUserBalance(userId));
+    return this.balances.get(userId) || {};
   }
 
-  getTrades(market: string): Trade[] {
-    this.mustGetOrderbook(market);
-    return [...(this.trades.get(market) ?? [])].sort((a, b) => b.timestamp - a.timestamp);
+  async ensureUserLoaded(userId: string) {
+    if (this.balances.has(userId)) return;
+    const balances = await ensureAndLoadBalances(userId);
+    this.balances.set(userId, balances);
   }
 
-  getTicker(market: string): Ticker {
-    this.mustGetOrderbook(market);
-    const trades = this.trades.get(market) ?? [];
-
-    if (trades.length === 0) {
-      return {
-        symbol: market,
-        lastPrice: "0",
-        high: "0",
-        low: "0",
-        volume: "0",
-        quoteVolume: "0",
-        firstPrice: "0",
-        priceChange: "0",
-        priceChangePercent: "0",
-        trades: 0
-      };
-    }
-
-    const ordered = [...trades].sort((a, b) => a.timestamp - b.timestamp);
-    const firstPrice = ordered[0]!.price;
-    const lastPrice = ordered[ordered.length - 1]!.price;
-
-    let high = ordered[0]!.price;
-    let low = ordered[0]!.price;
-    let volume = 0;
-    let quoteVolume = 0;
-
-    for (const trade of ordered) {
-      if (trade.price > high) high = trade.price;
-      if (trade.price < low) low = trade.price;
-      volume += trade.quantity;
-      quoteVolume += trade.price * trade.quantity;
-    }
-
-    const priceChange = lastPrice - firstPrice;
-    const priceChangePercent = firstPrice === 0 ? 0 : (priceChange / firstPrice) * 100;
-
-    return {
-      symbol: market,
-      lastPrice: lastPrice.toString(),
-      high: high.toString(),
-      low: low.toString(),
-      volume: volume.toString(),
-      quoteVolume: quoteVolume.toString(),
-      firstPrice: firstPrice.toString(),
-      priceChange: priceChange.toString(),
-      priceChangePercent: priceChangePercent.toString(),
-      trades: ordered.length
-    };
+  deposit(userId: string, asset: string, amount: number) {
+    const user = this.getOrCreateUserBalance(userId);
+    if (!user[asset]) user[asset] = { available: 0, locked: 0 };
+    user[asset].available += amount;
   }
 
-  getTickers(): Ticker[] {
-    return Array.from(this.orderbooks.keys()).map((market) => this.getTicker(market));
-  }
+  // --- TRADING METHODS ---
 
   placeOrder(input: PlaceOrderInput): PlaceOrderResult {
     const { market, userId, side, price, quantity } = input;
-
-    if (price <= 0) throw new Error("Price must be greater than 0");
-    if (quantity <= 0) throw new Error("Quantity must be greater than 0");
-
     const orderbook = this.mustGetOrderbook(market);
-    const [baseAsset, quoteAsset] = this.splitMarket(market);
+    const [base, quote] = this.splitMarket(market);
 
-    this.checkAndLockFunds(userId, baseAsset, quoteAsset, side, price, quantity);
+    // Initial check and lock funds
+    this.checkAndLockFunds(userId, base, quote, side, price, quantity);
 
     const order: Order = {
       orderId: crypto.randomUUID(),
@@ -132,19 +80,26 @@ export class Engine {
       filled: 0
     };
 
+    // Run the matcher
     const { executedQty, fills } = orderbook.addOrder(order);
 
-    this.applyFills(userId, side, baseAsset, quoteAsset, fills);
+    // Update balances based on fills
+    this.applyFills(userId, side, base, quote, fills);
     this.recordTrades(market, userId, side, fills);
 
+    // Refund excess locked funds for buy orders if price was lower or order filled
     if (side === "buy") {
-      this.releaseUnusedBuyFunds(userId, quoteAsset, price, quantity, executedQty, fills);
+      this.releaseUnusedBuyFunds(userId, quote, price, quantity, executedQty, fills);
     }
 
+    const status = executedQty === quantity ? "FILLED" : executedQty > 0 ? "PARTIALLY_FILLED" : "OPEN";
+    
     return {
       orderId: order.orderId,
       executedQty,
-      fills
+      fills,
+      status,
+      remainingQty: quantity - executedQty
     };
   }
 
@@ -152,183 +107,215 @@ export class Engine {
     const orderbook = this.mustGetOrderbook(market);
     const order = orderbook.cancel(orderId);
 
-    if (!order) {
-      throw new Error("Order not found");
-    }
+    if (!order) throw new Error("Order not found");
 
-    const [baseAsset, quoteAsset] = this.splitMarket(market);
+    const [base, quote] = this.splitMarket(market);
     const user = this.getOrCreateUserBalance(order.userId);
-    const remainingQty = order.quantity - order.filled;
+    const remaining = order.quantity - order.filled;
 
     if (order.side === "buy") {
-      const refund = remainingQty * order.price;
-      const quote = this.getOrCreateAssetBalance(user, quoteAsset);
-      quote.locked -= refund;
-      quote.available += refund;
+      const refund = remaining * order.price;
+      user[quote].locked -= refund;
+      user[quote].available += refund;
     } else {
-      const base = this.getOrCreateAssetBalance(user, baseAsset);
-      base.locked -= remainingQty;
-      base.available += remainingQty;
+      user[base].locked -= remaining;
+      user[base].available += remaining;
     }
 
     return {
       orderId,
-      remainingQty,
+      remainingQty: remaining,
       executedQty: order.filled
     };
   }
+
+  // --- DATA RETRIEVAL ---
 
   getDepth(market: string) {
     return this.mustGetOrderbook(market).getDepth();
   }
 
-  getOpenOrders(market: string, userId: string) {
-    return this.mustGetOrderbook(market).getOpenOrders(userId);
+  getTicker(market: string): Ticker {
+    const trades = this.trades.get(market) || [];
+    if (trades.length === 0) {
+      return { symbol: market, lastPrice: "0", high: "0", low: "0", volume: "0", quoteVolume: "0", firstPrice: "0", priceChange: "0", priceChangePercent: "0", trades: 0 };
+    }
+
+    const prices = trades.map(t => t.price);
+    const lastPrice = prices[0]!;
+    const high = Math.max(...prices);
+    const low = Math.min(...prices);
+    const volume = trades.reduce((sum, t) => sum + t.quantity, 0);
+
+    return {
+      symbol: market,
+      lastPrice: lastPrice.toString(),
+      high: high.toString(),
+      low: low.toString(),
+      volume: volume.toString(),
+      quoteVolume: (volume * lastPrice).toString(), // simplified
+      firstPrice: prices[prices.length - 1]!.toString(),
+      priceChange: (lastPrice - prices[prices.length - 1]!).toString(),
+      priceChangePercent: "0",
+      trades: trades.length
+    };
   }
 
-  private applyFills(
-    takerUserId: string,
-    takerSide: Side,
-    baseAsset: string,
-    quoteAsset: string,
-    fills: Fill[]
-  ): void {
-    const taker = this.getOrCreateUserBalance(takerUserId);
+  // --- PRIVATE HELPERS ---
+
+  private applyFills(takerId: string, takerSide: Side, base: string, quote: string, fills: Fill[]) {
+    const taker = this.getOrCreateUserBalance(takerId);
 
     for (const fill of fills) {
       const maker = this.getOrCreateUserBalance(fill.otherUserId);
-      const tradedQuote = fill.qty * fill.price;
+      const cost = fill.qty * fill.price;
 
       if (takerSide === "buy") {
-        this.getOrCreateAssetBalance(taker, quoteAsset).locked -= tradedQuote;
-        this.getOrCreateAssetBalance(taker, baseAsset).available += fill.qty;
-
-        this.getOrCreateAssetBalance(maker, baseAsset).locked -= fill.qty;
-        this.getOrCreateAssetBalance(maker, quoteAsset).available += tradedQuote;
+        taker[quote].locked -= cost;
+        taker[base].available += fill.qty;
+        maker[base].locked -= fill.qty;
+        maker[quote].available += cost;
       } else {
-        this.getOrCreateAssetBalance(taker, baseAsset).locked -= fill.qty;
-        this.getOrCreateAssetBalance(taker, quoteAsset).available += tradedQuote;
-
-        this.getOrCreateAssetBalance(maker, quoteAsset).locked -= tradedQuote;
-        this.getOrCreateAssetBalance(maker, baseAsset).available += fill.qty;
+        taker[base].locked -= fill.qty;
+        taker[quote].available += cost;
+        maker[quote].locked -= cost;
+        maker[base].available += fill.qty;
       }
     }
   }
 
-  private recordTrades(
-    market: string,
-    takerUserId: string,
-    takerSide: Side,
-    fills: Fill[]
-  ): void {
-    const marketTrades = this.trades.get(market);
-    if (!marketTrades) {
-      throw new Error(`Trade store missing for market ${market}`);
-    }
-
+  private recordTrades(market: string, takerId: string, takerSide: Side, fills: Fill[]) {
+    const marketTrades = this.trades.get(market)!;
     for (const fill of fills) {
-      const buyerUserId = takerSide === "buy" ? takerUserId : fill.otherUserId;
-      const sellerUserId = takerSide === "sell" ? takerUserId : fill.otherUserId;
-
-      marketTrades.push({
+      marketTrades.unshift({
         tradeId: fill.tradeId,
         market,
         price: fill.price,
         quantity: fill.qty,
-        buyerUserId,
-        sellerUserId,
+        buyerUserId: takerSide === "buy" ? takerId : fill.otherUserId,
+        sellerUserId: takerSide === "sell" ? takerId : fill.otherUserId,
         timestamp: Date.now()
       });
     }
+    if (marketTrades.length > 100) marketTrades.pop();
   }
 
-  private releaseUnusedBuyFunds(
-    userId: string,
-    quoteAsset: string,
-    orderPrice: number,
-    orderQty: number,
-    executedQty: number,
-    fills: Fill[]
-  ): void {
+  private checkAndLockFunds(userId: string, base: string, quote: string, side: Side, price: number, quantity: number) {
     const user = this.getOrCreateUserBalance(userId);
-    const quote = this.getOrCreateAssetBalance(user, quoteAsset);
-
-    const originallyLocked = orderPrice * orderQty;
-    const actuallySpent = fills.reduce((sum, fill) => sum + fill.price * fill.qty, 0);
-    const stillNeededForRestingOrder = (orderQty - executedQty) * orderPrice;
-    const refund = originallyLocked - actuallySpent - stillNeededForRestingOrder;
-
-    if (refund > 0) {
-      quote.locked -= refund;
-      quote.available += refund;
-    }
-  }
-
-  private checkAndLockFunds(
-    userId: string,
-    baseAsset: string,
-    quoteAsset: string,
-    side: Side,
-    price: number,
-    quantity: number
-  ): void {
-    const user = this.getOrCreateUserBalance(userId);
-
     if (side === "buy") {
-      const totalCost = price * quantity;
-      const quote = this.getOrCreateAssetBalance(user, quoteAsset);
-
-      if (quote.available < totalCost) {
-        throw new Error("Insufficient quote balance");
-      }
-
-      quote.available -= totalCost;
-      quote.locked += totalCost;
-      return;
+      const cost = price * quantity;
+      if (!user[quote] || user[quote].available < cost) throw new Error("Insufficient quote balance");
+      user[quote].available -= cost;
+      user[quote].locked += cost;
+    } else {
+      if (!user[base] || user[base].available < quantity) throw new Error("Insufficient base balance");
+      user[base].available -= quantity;
+      user[base].locked += quantity;
     }
+  }
 
-    const base = this.getOrCreateAssetBalance(user, baseAsset);
-
-    if (base.available < quantity) {
-      throw new Error("Insufficient base balance");
+  private releaseUnusedBuyFunds(userId: string, quote: string, price: number, quantity: number, executed: number, fills: Fill[]) {
+    const user = this.getOrCreateUserBalance(userId);
+    const locked = price * quantity;
+    const spent = fills.reduce((s, f) => s + (f.price * f.qty), 0);
+    const reserved = (quantity - executed) * price;
+    const refund = locked - spent - reserved;
+    if (refund > 0) {
+      user[quote].locked -= refund;
+      user[quote].available += refund;
     }
-
-    base.available -= quantity;
-    base.locked += quantity;
   }
 
   private mustGetOrderbook(market: string): Orderbook {
-    const orderbook = this.orderbooks.get(market);
-    if (!orderbook) {
-      throw new Error(`Market ${market} does not exist`);
-    }
-    return orderbook;
+    const ob = this.orderbooks.get(market);
+    if (!ob) throw new Error(`Market ${market} not found`);
+    return ob;
   }
 
   private splitMarket(market: string): [string, string] {
-    const [baseAsset, quoteAsset] = market.split("_");
-    if (!baseAsset || !quoteAsset) {
-      throw new Error(`Invalid market: ${market}`);
-    }
-    return [baseAsset, quoteAsset];
+    return market.split("_") as [string, string];
   }
 
   private getOrCreateUserBalance(userId: string): UserBalance {
-    let user = this.balances.get(userId);
-    if (!user) {
-      user = {};
-      this.balances.set(userId, user);
-    }
-    return user;
+    if (!this.balances.has(userId)) this.balances.set(userId, {});
+    return this.balances.get(userId)!;
+  }
+}
+
+/**
+ * Inner class to handle logical order matching for one market.
+ */
+class Orderbook {
+  public bids: Order[] = [];
+  public asks: Order[] = [];
+  private nextTradeId = 1;
+
+  constructor(public base: string, public quote: string) {}
+
+  addOrder(order: Order): { executedQty: number; fills: Fill[] } {
+    return order.side === "buy" ? this.match(order, this.asks, true) : this.match(order, this.bids, false);
   }
 
-  private getOrCreateAssetBalance(
-    user: UserBalance,
-    asset: string
-  ): { available: number; locked: number } {
-    if (!user[asset]) {
-      user[asset] = { available: 0, locked: 0 };
+  match(order: Order, opposites: Order[], isBuy: boolean): { executedQty: number; fills: Fill[] } {
+    let executedQty = 0;
+    const fills: Fill[] = [];
+
+    // Sort opposites: for buy, asks should be lowest first. for sell, bids should be highest first.
+    opposites.sort((a, b) => isBuy ? a.price - b.price : b.price - a.price);
+
+    for (const opp of opposites) {
+      if (executedQty >= order.quantity) break;
+      if (isBuy ? opp.price > order.price : opp.price < order.price) break;
+
+      const qty = Math.min(order.quantity - executedQty, opp.quantity - opp.filled);
+      if (qty <= 0) continue;
+
+      opp.filled += qty;
+      executedQty += qty;
+
+      fills.push({
+        tradeId: this.nextTradeId++,
+        orderId: order.orderId,
+        price: opp.price,
+        qty,
+        otherUserId: opp.userId,
+        makerOrderId: opp.orderId,
+        makerFilledQuantity: opp.filled,
+        makerStatus: opp.filled === opp.quantity ? "FILLED" : "PARTIALLY_FILLED"
+      });
     }
-    return user[asset];
+
+    order.filled = executedQty;
+    
+    // Clean up filled orders from opposite book
+    if (isBuy) {
+      this.asks = this.asks.filter(o => o.filled < o.quantity);
+      if (order.filled < order.quantity) this.bids.push(order);
+    } else {
+      this.bids = this.bids.filter(o => o.filled < o.quantity);
+      if (order.filled < order.quantity) this.asks.push(order);
+    }
+
+    return { executedQty, fills };
+  }
+
+  cancel(orderId: string): Order | undefined {
+    let idx = this.bids.findIndex(o => o.orderId === orderId);
+    if (idx !== -1) return this.bids.splice(idx, 1)[0];
+    idx = this.asks.findIndex(o => o.orderId === orderId);
+    if (idx !== -1) return this.asks.splice(idx, 1)[0];
+    return undefined;
+  }
+
+  getDepth() {
+    const summarize = (orders: Order[]) => {
+      const levels: Record<number, number> = {};
+      for (const o of orders) levels[o.price] = (levels[o.price] || 0) + (o.quantity - o.filled);
+      return Object.entries(levels).map(([p, q]) => [p, q.toString()] as [string, string]);
+    };
+    return {
+      bids: summarize(this.bids).sort((a, b) => Number(b[0]) - Number(a[0])),
+      asks: summarize(this.asks).sort((a, b) => Number(a[0]) - Number(b[0]))
+    };
   }
 }

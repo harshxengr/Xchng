@@ -4,20 +4,20 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./src/auth.ts",
-      "default": "./src/auth.ts"
+      "types": "./dist/auth.d.ts",
+      "default": "./dist/auth.js"
     },
     "./client": {
-      "types": "./src/auth-client.ts",
-      "default": "./src/auth-client.ts"
+      "types": "./dist/auth-client.d.ts",
+      "default": "./dist/auth-client.js"
     }
   },
   "scripts": {
+    "build": "tsc",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@workspace/database": "workspace:*",
-    "@workspace/env": "workspace:*",
+    "@workspace/shared": "workspace:*",
     "better-auth": "^1.4.18"
   },
   "devDependencies": {
