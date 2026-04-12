@@ -1,11 +1,13 @@
-import { createRedisClient, REDIS_KEYS } from "@workspace/shared";
+import { Redis } from "ioredis";
+import { env } from "@workspace/env";
 
 // --- CONFIGURATION (Direct from process.env) ---
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
+const API_URL = env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
 const MARKETS = (process.env.MM_MARKETS || "TATA_INR").split(",").map(m => m.trim());
 const LOOP_INTERVAL = parseInt(process.env.MM_LOOP_INTERVAL_MS || "5000");
 
-const redis = createRedisClient();
+// Create Redis client inline
+const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
 /**
  * Simplified Market Maker Bot.
@@ -28,12 +30,14 @@ async function runMarketLoop(market: string) {
 
             // 3. Cancel all our old orders to keep it simple (junior style)
             // A more advanced dev would only cancel if price moved, but this is fine for a demo.
-            for (const order of existingOrders) {
-                await fetch(`${API_URL}/order`, {
-                    method: "DELETE",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ market, orderId: order.orderId, userId })
-                });
+            if (Array.isArray(existingOrders)) {
+                for (const order of existingOrders) {
+                    await fetch(`${API_URL}/order`, {
+                        method: "DELETE",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ market, orderId: order.orderId, userId })
+                    });
+                }
             }
 
             // 4. Place a new ladder (1 buy, 1 sell for simplicity)

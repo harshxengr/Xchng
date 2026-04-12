@@ -2,8 +2,9 @@ import "server-only";
 
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
-import { pool } from "@workspace/database";
+import { prisma } from "@workspace/database";
 import { env } from "@workspace/env";
+import type { BetterAuthOptions } from "better-auth/types";
 
 const googleSocialProvider =
   env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
@@ -15,8 +16,8 @@ const googleSocialProvider =
       }
     : {};
 
-export const auth = betterAuth({
-  database: pool,
+const authOptions: BetterAuthOptions = {
+  database: prisma,
 
   emailAndPassword: {
     enabled: true,
@@ -46,6 +47,8 @@ export const auth = betterAuth({
   trustedOrigins: [env.NEXT_PUBLIC_APP_URL, "http://localhost:3000", "http://localhost:4000"],
 
   plugins: [nextCookies()],
-});
+};
+
+export const auth = betterAuth(authOptions);
 
 export type Session = typeof auth.$Infer.Session;

@@ -1,22 +1,16 @@
 import crypto from "node:crypto";
-import { 
-  query,
-  saveOrder,
-  markOrderCancelled,
-  upsertUserBalances,
-  ensureAndLoadBalances
-} from "@workspace/shared";
-import type { 
-  Order, 
-  Side, 
-  Trade, 
-  Ticker, 
-  Fill, 
-  PlaceOrderInput, 
-  PlaceOrderResult, 
+import { prisma } from "@workspace/database";
+import type {
+  Order,
+  Side,
+  Trade,
+  Ticker,
+  Fill,
+  PlaceOrderInput,
+  PlaceOrderResult,
   CancelOrderResult,
   UserBalance
-} from "@workspace/shared";
+} from "@workspace/types";
 
 /**
  * A simplified matching engine that maintains orderbooks in memory.
@@ -51,8 +45,31 @@ export class Engine {
 
   async ensureUserLoaded(userId: string) {
     if (this.balances.has(userId)) return;
-    const balances = await ensureAndLoadBalances(userId);
-    this.balances.set(userId, balances);
+    
+    let balances = await prisma.$queryRaw`
+      SELECT * FROM "Balance"
+      WHERE "userId" = ${userId}
+    ` as any[];
+
+    if (balances.length === 0) {
+      const defaultAssets = ["TATA", "INR"];
+      for (const asset of defaultAssets) {
+        await prisma.$queryRaw`
+          INSERT INTO "Balance" ("id", "userId", "asset", "available", "locked")
+          VALUES (gen_random_uuid(), ${userId}, ${asset}, '0', '0')
+        `;
+      }
+      balances = await prisma.$queryRaw`
+        SELECT * FROM "Balance"
+        WHERE "userId" = ${userId}
+      ` as any[];
+    }
+
+    const result: Record<string, { available: number; locked: number }> = {};
+    for (const b of balances) {
+      result[b.asset] = { available: Number(b.available), locked: Number(b.locked) };
+    }
+    this.balances.set(userId, result);
   }
 
   deposit(userId: string, asset: string, amount: number) {
@@ -92,7 +109,7 @@ export class Engine {
       this.releaseUnusedBuyFunds(userId, quote, price, quantity, executedQty, fills);
     }
 
-    const status = executedQty === quantity ? "FILLED" : executedQty > 0 ? "PARTIALLY_FILLED" : "OPEN";
+    const status: "OPEN" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" = executedQty === quantity ? "FILLED" : executedQty > 0 ? "PARTIALLY_FILLED" : "OPEN";
     
     return {
       orderId: order.orderId,
@@ -115,11 +132,11 @@ export class Engine {
 
     if (order.side === "buy") {
       const refund = remaining * order.price;
-      user[quote].locked -= refund;
-      user[quote].available += refund;
+      user[quote]!.locked -= refund;
+      user[quote]!.available += refund;
     } else {
-      user[base].locked -= remaining;
-      user[base].available += remaining;
+      user[base]!.locked -= remaining;
+      user[base]!.available += remaining;
     }
 
     return {
@@ -171,15 +188,15 @@ export class Engine {
       const cost = fill.qty * fill.price;
 
       if (takerSide === "buy") {
-        taker[quote].locked -= cost;
-        taker[base].available += fill.qty;
-        maker[base].locked -= fill.qty;
-        maker[quote].available += cost;
+        taker[quote]!.locked -= cost;
+        taker[base]!.available += fill.qty;
+        maker[base]!.locked -= fill.qty;
+        maker[quote]!.available += cost;
       } else {
-        taker[base].locked -= fill.qty;
-        taker[quote].available += cost;
-        maker[quote].locked -= cost;
-        maker[base].available += fill.qty;
+        taker[base]!.locked -= fill.qty;
+        taker[quote]!.available += cost;
+        maker[quote]!.locked -= cost;
+        maker[base]!.available += fill.qty;
       }
     }
   }
@@ -204,13 +221,13 @@ export class Engine {
     const user = this.getOrCreateUserBalance(userId);
     if (side === "buy") {
       const cost = price * quantity;
-      if (!user[quote] || user[quote].available < cost) throw new Error("Insufficient quote balance");
-      user[quote].available -= cost;
-      user[quote].locked += cost;
+      if (!user[quote] || user[quote]!.available < cost) throw new Error("Insufficient quote balance");
+      user[quote]!.available -= cost;
+      user[quote]!.locked += cost;
     } else {
-      if (!user[base] || user[base].available < quantity) throw new Error("Insufficient base balance");
-      user[base].available -= quantity;
-      user[base].locked += quantity;
+      if (!user[base] || user[base]!.available < quantity) throw new Error("Insufficient base balance");
+      user[base]!.available -= quantity;
+      user[base]!.locked += quantity;
     }
   }
 
@@ -221,8 +238,8 @@ export class Engine {
     const reserved = (quantity - executed) * price;
     const refund = locked - spent - reserved;
     if (refund > 0) {
-      user[quote].locked -= refund;
-      user[quote].available += refund;
+      user[quote]!.locked -= refund;
+      user[quote]!.available += refund;
     }
   }
 

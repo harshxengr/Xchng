@@ -55,7 +55,7 @@ export function DashboardScreen({ user, canManageMmBot }: DashboardScreenProps) 
       const [balanceData, tickerData, orderData] = await Promise.all([
         getBalances(user.email),
         getTickers(),
-        getOrderHistory({ userId: user.email, limit: 8 })
+        getOrderHistory(user.email, "TATA_INR", 8)
       ]);
 
       setBalances(balanceData);

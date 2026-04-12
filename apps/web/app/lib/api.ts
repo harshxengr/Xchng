@@ -1,18 +1,14 @@
-import type { 
-    Order, 
-    Trade, 
-    Ticker, 
-    AssetBalance, 
-    UserBalance 
-} from "@workspace/shared";
+import type {
+    Order,
+    Trade,
+    Ticker,
+    AssetBalance,
+    UserBalance,
+    Depth
+} from "@workspace/types";
+import { env } from "@workspace/env";
 
-// We re-export specialized types if they aren't in shared yet, 
-// but most should come from @workspace/shared.
-
-export type Depth = {
-    bids: [string, string][];
-    asks: [string, string][];
-};
+export type { Trade, Ticker, Depth, UserBalance };
 
 export type OpenOrder = {
     orderId: string;
@@ -23,10 +19,13 @@ export type OpenOrder = {
     filled: number;
 };
 
-// ... existing types keep working if they match ...
+export type OrderHistoryEntry = any;
+export type UserBalances = UserBalance;
+export type Kline = any;
+export type MmBotStatus = any;
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:4001";
+const API_URL = env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
+const WS_URL = env.NEXT_PUBLIC_WS_URL || "ws://localhost:4001";
 
 export function getWsUrl() { return WS_URL; }
 
@@ -45,6 +44,11 @@ export async function getTicker(symbol: string): Promise<Ticker> {
     return res.json();
 }
 
+export async function getTickers(): Promise<Ticker[]> {
+    const res = await fetch(`${API_URL}/tickers`);
+    return res.json();
+}
+
 export async function getBalances(userId: string): Promise<UserBalance> {
     const res = await fetch(`${API_URL}/balances?userId=${userId}`);
     return res.json();
@@ -52,6 +56,26 @@ export async function getBalances(userId: string): Promise<UserBalance> {
 
 export async function getOpenOrders(market: string, userId: string): Promise<OpenOrder[]> {
     const res = await fetch(`${API_URL}/order/open?market=${market}&userId=${userId}`);
+    return res.json();
+}
+
+export async function getOrderHistory(userId: string, market: string, limit?: number): Promise<OrderHistoryEntry[]> {
+    const url = `${API_URL}/order/history?userId=${userId}&market=${market}${limit ? `&limit=${limit}` : ''}`;
+    const res = await fetch(url);
+    return res.json();
+}
+
+export async function getMmBotStatuses(): Promise<MmBotStatus[]> {
+    const res = await fetch(`${API_URL}/mm-bot/statuses`);
+    return res.json();
+}
+
+export async function setMmBotPaused(botId: string, paused: boolean): Promise<void> {
+    const res = await fetch(`${API_URL}/mm-bot/paused`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ botId, paused })
+    });
     return res.json();
 }
 

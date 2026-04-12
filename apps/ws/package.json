@@ -5,7 +5,8 @@
   "type": "module",
   "dependencies": {
     "ws": "^8.20.0",
-    "@workspace/shared": "workspace:*"
+    "@workspace/types": "workspace:*",
+    "ioredis": "^5.3.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

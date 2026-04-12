@@ -2,25 +2,27 @@ import { createServer } from "node:net";
 import express from "express";
 import cors from "cors";
 import crypto from "node:crypto";
-import { 
-  createRedisClient, 
-  REDIS_CHANNELS, 
-  REDIS_KEYS,
-  getLatestTickers,
-  getLatestTickerByMarket,
-  getRecentTrades,
-  ensureAndLoadBalances,
-  getOpenOrdersForUser,
-  getOrderHistory,
-  query
-} from "@workspace/shared";
-import type { PlaceOrderInput, EngineCommandResult } from "@workspace/shared";
+import { Redis } from "ioredis";
+import { prisma } from "@workspace/database";
+import { env } from "@workspace/env";
+import type { PlaceOrderInput, EngineCommandResult } from "@workspace/types";
 
 const app = express();
-const port = process.env.PORT || 4000;
+const port = env.PORT || 4000;
 
-// Use a shared publisher for all commands
-const redisPublisher = createRedisClient();
+// Redis channels - inline as per junior dev style
+const REDIS_CHANNELS = {
+  COMMANDS: "engine:commands",
+  EVENTS: "engine:events",
+  rpcResponse: (requestId: string) => `rpc.response.${requestId}`,
+};
+
+const REDIS_KEYS = {
+  depth: (market: string) => `depth:${market}`,
+};
+
+// Create Redis clients inline
+const redisPublisher = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
 app.use(cors());
 app.use(express.json());
@@ -36,7 +38,7 @@ async function sendCommandToEngine<T>(type: string, payload: any): Promise<T> {
     const responseChannel = REDIS_CHANNELS.rpcResponse(requestId);
     
     // Create a temporary subscriber for this request
-    const subscriber = createRedisClient();
+    const subscriber = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
     await subscriber.subscribe(responseChannel);
 
     return new Promise<T>((resolve, reject) => {
@@ -96,8 +98,14 @@ app.delete("/api/v1/order", async (req, res) => {
 app.get("/api/v1/order/open", async (req, res) => {
     try {
         const { market, userId } = req.query as { market: string, userId: string };
-        const orders = await getOpenOrdersForUser(market, userId);
-        res.json(orders.map(o => ({
+        const orders = await prisma.$queryRaw`
+            SELECT * FROM "Order"
+            WHERE "market" = ${market}
+            AND "userId" = ${userId}
+            AND "status" IN ('OPEN', 'PARTIALLY_FILLED')
+            ORDER BY "createdAt" ASC
+        ` as any[];
+        res.json(orders.map((o: any) => ({
             orderId: o.id,
             userId: o.userId,
             side: o.side,
@@ -113,7 +121,12 @@ app.get("/api/v1/order/open", async (req, res) => {
 app.get("/api/v1/order/history", async (req, res) => {
     try {
         const { userId, market, limit = "50" } = req.query as any;
-        const orders = await getOrderHistory({ userId, market, limit: parseInt(limit) });
+        let query = `SELECT * FROM "Order" WHERE 1=1`;
+        const params: any[] = [];
+        if (userId) { params.push(userId); query += ` AND "userId" = $${params.length}`; }
+        if (market) { params.push(market); query += ` AND "market" = $${params.length}`; }
+        query += ` ORDER BY "createdAt" DESC LIMIT ${parseInt(limit)}`;
+        const orders = await prisma.$queryRawUnsafe(query, ...params) as any[];
         res.json(orders);
     } catch (e: any) {
         res.status(400).json({ success: false, error: e.message });
@@ -134,7 +147,12 @@ app.get("/api/v1/depth", async (req, res) => {
 app.get("/api/v1/trades", async (req, res) => {
     try {
         const { symbol } = req.query as { symbol: string };
-        const trades = await getRecentTrades(symbol);
+        const trades = await prisma.$queryRaw`
+            SELECT * FROM "Trade"
+            WHERE "market" = ${symbol}
+            ORDER BY "timestamp" DESC
+            LIMIT 50
+        ` as any[];
         res.json(trades);
     } catch (e: any) {
         res.status(400).json({ success: false, error: e.message });
@@ -144,8 +162,12 @@ app.get("/api/v1/trades", async (req, res) => {
 app.get("/api/v1/ticker", async (req, res) => {
     try {
         const { symbol } = req.query as { symbol: string };
-        const ticker = await getLatestTickerByMarket(symbol);
-        res.json(ticker || { symbol, lastPrice: "0" });
+        const tickers = await prisma.tickerSnapshot.findMany({
+            where: { market: symbol },
+            orderBy: { timestamp: "desc" },
+            take: 1
+        });
+        res.json(tickers[0] || { symbol, lastPrice: "0" });
     } catch (e: any) {
         res.status(400).json({ success: false, error: e.message });
     }
@@ -153,7 +175,10 @@ app.get("/api/v1/ticker", async (req, res) => {
 
 app.get("/api/v1/tickers", async (req, res) => {
     try {
-        const tickers = await getLatestTickers();
+        const tickers = await prisma.$queryRaw`
+            SELECT DISTINCT ON ("market") * FROM "TickerSnapshot"
+            ORDER BY "market", "timestamp" DESC
+        ` as any[];
         res.json(tickers);
     } catch (e: any) {
         res.status(400).json({ success: false, error: e.message });
@@ -164,8 +189,30 @@ app.get("/api/v1/tickers", async (req, res) => {
 app.get("/api/v1/balances", async (req, res) => {
     try {
         const { userId } = req.query as { userId: string };
-        const balances = await ensureAndLoadBalances(userId);
-        res.json(balances);
+        let balances = await prisma.$queryRaw`
+            SELECT * FROM "Balance"
+            WHERE "userId" = ${userId}
+        ` as any[];
+
+        if (balances.length === 0) {
+            const defaultAssets = ["TATA", "INR"];
+            for (const asset of defaultAssets) {
+                await prisma.$queryRaw`
+                    INSERT INTO "Balance" ("id", "userId", "asset", "available", "locked")
+                    VALUES (gen_random_uuid(), ${userId}, ${asset}, '0', '0')
+                `;
+            }
+            balances = await prisma.$queryRaw`
+                SELECT * FROM "Balance"
+                WHERE "userId" = ${userId}
+            ` as any[];
+        }
+
+        const result: Record<string, { available: number; locked: number }> = {};
+        for (const b of balances) {
+            result[b.asset] = { available: Number(b.available), locked: Number(b.locked) };
+        }
+        res.json(result);
     } catch (e: any) {
         res.status(400).json({ success: false, error: e.message });
     }

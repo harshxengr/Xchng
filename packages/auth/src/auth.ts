@@ -1,22 +1,24 @@
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { getSessionCookie } from "better-auth/cookies";
-import { getPool } from "@workspace/shared";
+import { prisma } from "@workspace/database";
+import { env } from "@workspace/env";
+import type { BetterAuthOptions } from "better-auth/types";
 
 export { getSessionCookie };
 
 const googleSocialProvider =
-  process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+  env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
     ? {
         google: {
-          clientId: process.env.GOOGLE_CLIENT_ID,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          clientId: env.GOOGLE_CLIENT_ID,
+          clientSecret: env.GOOGLE_CLIENT_SECRET,
         },
       }
     : {};
 
-export const auth = betterAuth({
-  database: getPool(),
+const authOptions: BetterAuthOptions = {
+  database: prisma,
 
   emailAndPassword: {
     enabled: true,
@@ -27,7 +29,7 @@ export const auth = betterAuth({
 
   emailVerification: {
     sendVerificationEmail: async ({ user, url }) => {
-      if (process.env.NODE_ENV === "development") {
+      if (env.NODE_ENV === "development") {
         console.info(`[auth] verification link for ${user.email}: ${url}`);
       }
     },
@@ -44,13 +46,15 @@ export const auth = betterAuth({
   },
 
   trustedOrigins: [
-    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+    env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
     "http://localhost:3000",
     "http://localhost:4000",
   ],
 
   plugins: [nextCookies()],
-});
+};
+
+export const auth = betterAuth(authOptions);
 
 export type Session = typeof auth.$Infer.Session;
 export type User = typeof auth.$Infer.Session.user;

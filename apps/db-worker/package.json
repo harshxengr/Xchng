@@ -10,7 +10,8 @@
     "check-types": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@workspace/shared": "workspace:*",
+    "@workspace/types": "workspace:*",
+    "@workspace/database": "workspace:*",
     "ioredis": "^5.3.0"
   },
   "devDependencies": {

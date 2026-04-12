@@ -1,21 +1,26 @@
-import { 
-  createRedisClient, 
-  REDIS_CHANNELS, 
-  REDIS_KEYS,
-  saveOrder,
-  markOrderCancelled,
-  upsertUserBalances,
-  query
-} from "@workspace/shared";
+import { Redis } from "ioredis";
+import { prisma } from "@workspace/database";
 import type { 
   EngineCommand, 
   EngineCommandResult, 
   EngineEvent,
-} from "@workspace/shared";
+} from "@workspace/types";
 import { Engine } from "./trade/Engine.js";
 
-const consumer = createRedisClient();
-const publisher = createRedisClient();
+// Redis channels - inline as per junior dev style
+const REDIS_CHANNELS = {
+  COMMANDS: "engine:commands",
+  EVENTS: "engine:events",
+  rpcResponse: (requestId: string) => `rpc.response.${requestId}`,
+};
+
+const REDIS_KEYS = {
+  depth: (market: string) => `depth:${market}`,
+};
+
+// Create Redis clients inline
+const consumer = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+const publisher = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 const engine = new Engine();
 
 async function start() {
@@ -48,24 +53,24 @@ async function handleCommand(command: EngineCommand) {
         await engine.ensureUserLoaded(payload.userId);
         const result = engine.placeOrder(payload);
 
-        // PERSIST TO DB
-        await saveOrder({
-            id: result.orderId,
-            market: payload.market,
-            userId: payload.userId,
-            side: payload.side,
-            price: payload.price,
-            quantity: payload.quantity,
-            filledQuantity: result.executedQty,
-            status: result.status,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-        });
+        // PERSIST TO DB using Prisma raw SQL
+        await prisma.$queryRaw`
+            INSERT INTO "Order" ("id", "market", "userId", "side", "price", "quantity", "filledQuantity", "status", "createdAt", "updatedAt")
+            VALUES (${result.orderId}, ${payload.market}, ${payload.userId}, ${payload.side}, ${payload.price.toString()}, ${payload.quantity.toString()}, ${result.executedQty.toString()}, ${result.status}, ${new Date()}, ${new Date()})
+        `;
         
         // Sync balances back to DB for matched users
-        const touchedUsers = [payload.userId, ...result.fills.map(f => f.otherUserId)];
+        const touchedUsers = [payload.userId, ...result.fills.map((f: any) => f.otherUserId)];
         for (const uid of Array.from(new Set(touchedUsers))) {
-            await upsertUserBalances(uid, engine.getBalances(uid));
+            const balances = engine.getBalances(uid);
+            for (const [asset, bal] of Object.entries(balances)) {
+                const balance = bal as { available: number; locked: number };
+                await prisma.$queryRaw`
+                    INSERT INTO "Balance" ("id", "userId", "asset", "available", "locked")
+                    VALUES (gen_random_uuid(), ${uid}, ${asset}, ${balance.available.toString()}, ${balance.locked.toString()})
+                    ON CONFLICT ("userId", "asset") DO UPDATE SET "available" = ${balance.available.toString()}, "locked" = ${balance.locked.toString()}
+                `;
+            }
         }
 
         // Cache depth in Redis
@@ -96,14 +101,20 @@ async function handleCommand(command: EngineCommand) {
 
     } else if (type === "CANCEL_ORDER") {
         const result = engine.cancelOrder(payload.market, payload.orderId);
-        
-        await markOrderCancelled({
-            id: payload.orderId,
-            filledQuantity: result.executedQty,
-            updatedAt: Date.now()
-        });
-        
-        await upsertUserBalances(payload.userId, engine.getBalances(payload.userId));
+
+        await prisma.$queryRaw`
+            UPDATE "Order" SET "filledQuantity" = ${result.executedQty.toString()}, "status" = 'CANCELLED', "updatedAt" = ${new Date()} WHERE "id" = ${payload.orderId}
+        `;
+
+        const balances = engine.getBalances(payload.userId);
+        for (const [asset, bal] of Object.entries(balances)) {
+            const balance = bal as { available: number; locked: number };
+            await prisma.$queryRaw`
+                INSERT INTO "Balance" ("id", "userId", "asset", "available", "locked")
+                VALUES (gen_random_uuid(), ${payload.userId}, ${asset}, ${balance.available.toString()}, ${balance.locked.toString()})
+                ON CONFLICT ("userId", "asset") DO UPDATE SET "available" = ${balance.available.toString()}, "locked" = ${balance.locked.toString()}
+            `;
+        }
         await publisher.set(REDIS_KEYS.depth(payload.market), JSON.stringify(engine.getDepth(payload.market)));
 
         await publishRpcResponse(requestId, true, result);
@@ -112,10 +123,17 @@ async function handleCommand(command: EngineCommand) {
     } else if (type === "DEPOSIT") {
         await engine.ensureUserLoaded(payload.userId);
         engine.deposit(payload.userId, payload.asset, payload.amount);
-        
+
         const balances = engine.getBalances(payload.userId);
-        await upsertUserBalances(payload.userId, balances);
-        
+        for (const [asset, bal] of Object.entries(balances)) {
+            const balance = bal as { available: number; locked: number };
+            await prisma.$queryRaw`
+                INSERT INTO "Balance" ("id", "userId", "asset", "available", "locked")
+                VALUES (gen_random_uuid(), ${payload.userId}, ${asset}, ${balance.available.toString()}, ${balance.locked.toString()})
+                ON CONFLICT ("userId", "asset") DO UPDATE SET "available" = ${balance.available.toString()}, "locked" = ${balance.locked.toString()}
+            `;
+        }
+
         await publishRpcResponse(requestId, true, { success: true, balances });
         await publishEvent("BALANCES_UPDATED", undefined, { userId: payload.userId, timestamp: Date.now() });
     }
