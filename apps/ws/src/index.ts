@@ -1,10 +1,15 @@
 import { WebSocketServer, WebSocket } from "ws";
-import { createRedisClient, REDIS_CHANNELS } from "@workspace/shared";
-import type { EngineEvent } from "@workspace/shared";
+import { Redis } from "ioredis";
+import type { EngineEvent } from "@workspace/types";
 
 const port = Number(process.env.WS_PORT || 4001);
 const wss = new WebSocketServer({ port });
 const subscriptions = new Map<WebSocket, Set<string>>();
+
+// Redis channels - inline as per junior dev style
+const REDIS_CHANNELS = {
+  EVENTS: "engine:events",
+};
 
 // --- WEBSOCKET SERVER LOGIC ---
 
@@ -41,7 +46,7 @@ function broadcast(channel: string, data: any) {
 
 // --- REDIS PUB/SUB LOGIC ---
 
-const subscriber = createRedisClient();
+const subscriber = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
 async function start() {
     await subscriber.subscribe(REDIS_CHANNELS.EVENTS);

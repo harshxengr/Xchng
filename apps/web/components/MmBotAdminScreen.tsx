@@ -97,10 +97,7 @@ export function MmBotAdminScreen() {
     try {
       setTogglingMarket(status.market);
       setMessage("");
-      await setMmBotPaused({
-        market: status.market,
-        paused: !status.paused
-      });
+      await setMmBotPaused(status.market, !status.paused);
       await loadStatuses();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to update market-maker control");

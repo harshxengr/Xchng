@@ -1,13 +1,14 @@
-import { 
-  createRedisClient, 
-  REDIS_CHANNELS, 
-  saveTickerSnapshot, 
-  saveTrades, 
-  updateOrderExecution 
-} from "@workspace/shared";
-import type { EngineEvent } from "@workspace/shared";
+import { Redis } from "ioredis";
+import { prisma } from "@workspace/database";
+import type { EngineEvent } from "@workspace/types";
 
-const subscriber = createRedisClient();
+// Redis channels - inline as per junior dev style
+const REDIS_CHANNELS = {
+  EVENTS: "engine:events",
+};
+
+// Create Redis client inline
+const subscriber = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
 async function start() {
     await subscriber.subscribe(REDIS_CHANNELS.EVENTS);
@@ -18,17 +19,32 @@ async function start() {
             const event = JSON.parse(raw) as EngineEvent;
             
             if (event.type === "TRADE_CREATED") {
-                await saveTrades([event.data]);
+                await prisma.$queryRaw`
+                    INSERT INTO "Trade" ("id", "tradeId", "market", "price", "quantity", "buyerUserId", "sellerUserId", "timestamp")
+                    VALUES (gen_random_uuid(), ${event.data.tradeId}, ${event.data.market}, ${event.data.price.toString()}, ${event.data.quantity.toString()}, ${event.data.buyerUserId}, ${event.data.sellerUserId}, ${new Date(event.data.timestamp)})
+                    ON CONFLICT ("market", "tradeId") DO NOTHING
+                `;
                 console.log(`[DB] Trade saved: ${event.data.tradeId}`);
             } else if (event.type === "TICKER_UPDATED") {
-                await saveTickerSnapshot(event.data);
-            } else if (event.type === "ORDER_UPDATED") {
-                await updateOrderExecution({
-                    id: event.data.orderId,
-                    filledQuantity: event.data.filledQuantity,
-                    status: event.data.status,
-                    updatedAt: event.data.timestamp
+                await prisma.tickerSnapshot.create({
+                    data: {
+                        market: event.data.market,
+                        lastPrice: event.data.lastPrice.toString(),
+                        high: event.data.high.toString(),
+                        low: event.data.low.toString(),
+                        volume: event.data.volume.toString(),
+                        quoteVolume: event.data.quoteVolume.toString(),
+                        firstPrice: event.data.firstPrice.toString(),
+                        priceChange: event.data.priceChange.toString(),
+                        priceChangePercent: event.data.priceChangePercent.toString(),
+                        trades: event.data.trades,
+                        timestamp: new Date(event.data.timestamp)
+                    }
                 });
+            } else if (event.type === "ORDER_UPDATED") {
+                await prisma.$queryRaw`
+                    UPDATE "Order" SET "filledQuantity" = ${event.data.filledQuantity.toString()}, "status" = ${event.data.status}, "updatedAt" = ${new Date(event.data.timestamp)} WHERE "id" = ${event.data.orderId}
+                `;
             }
         } catch (e) {
             console.error("DB worker failed to handle event:", e);

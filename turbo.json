@@ -1,5 +1,4 @@
 {
-  "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
   "tasks": {
     "build": {
@@ -36,9 +35,12 @@
       ]
     },
     "dev": {
-      "dependsOn": ["^db:generate"],
+      "dependsOn": ["^db:generate", "@workspace/database#build"],
       "cache": false,
       "persistent": true
+    },
+    "dev:infra": {
+      "cache": false
     },
     "db:generate": {
       "outputs": ["generated/**"],
