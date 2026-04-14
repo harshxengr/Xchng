@@ -13,6 +13,9 @@
     "check-types": "turbo run check-types"
   },
   "devDependencies": {
+    "@types/pg": "^8.16.0",
+    "axios": "^1.15.0",
+    "pg": "^8.18.0",
     "turbo": "^2.4.4"
   },
   "packageManager": "pnpm@10.25.0"

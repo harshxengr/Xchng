@@ -4,7 +4,7 @@ import cors from "cors";
 import crypto from "node:crypto";
 import { Redis } from "ioredis";
 import { prisma } from "@workspace/database";
-import { env } from "@workspace/env";
+import { env } from "@workspace/env/server";
 import type { PlaceOrderInput, EngineCommandResult } from "@workspace/types";
 
 const app = express();

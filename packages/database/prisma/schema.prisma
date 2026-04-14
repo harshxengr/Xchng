@@ -15,7 +15,7 @@ model User {
   emailVerified Boolean   @default(false)
   image         String?
   createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  updatedAt     DateTime  @default(now()) @updatedAt
   sessions      Session[]
   accounts      Account[]
 
@@ -27,7 +27,7 @@ model Session {
   expiresAt DateTime
   token     String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
   ipAddress String?
   userAgent String?
   userId    String
@@ -52,7 +52,7 @@ model Account {
   scope                 String?
   password              String?
   createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  updatedAt             DateTime  @default(now()) @updatedAt
 
   @@index([userId])
   @@map("account")
@@ -64,24 +64,71 @@ model Verification {
   value      String
   expiresAt  DateTime
   createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  updatedAt  DateTime @default(now()) @updatedAt
 
   @@index([identifier])
   @@map("verification")
 }
 
+model Order {
+  id             String   @id @default(cuid())
+  market         String
+  userId         String
+  side           String
+  price          String
+  quantity       String
+  filledQuantity String   @default("0")
+  status         String   @default("OPEN")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  @@index([userId])
+  @@index([market, status])
+  @@map("Order")
+}
+
+model Balance {
+  id        String @id @default(cuid())
+  userId    String
+  asset     String
+  available String @default("0")
+  locked    String @default("0")
+
+  @@unique([userId, asset])
+  @@map("Balance")
+}
+
 model Trade {
-  id          String   @id
-  tradeId     Int
-  market      String
-  price       String
-  quantity    String
-  buyerUserId String
+  id           String   @id @default(cuid())
+  tradeId      Int
+  market       String
+  price        String
+  quantity     String
+  buyerUserId  String
   sellerUserId String
-  timestamp   DateTime
+  timestamp    DateTime
 
   @@unique([market, tradeId])
   @@index([market, timestamp(sort: Desc)])
+  @@map("Trade")
+}
+
+model Kline {
+  id          String   @id @default(cuid())
+  market      String
+  interval    String
+  bucketStart DateTime
+  open        String
+  high        String
+  low         String
+  close       String
+  baseVolume  String
+  quoteVolume String
+  trades      Int      @default(0)
+
+  @@unique([market, interval, bucketStart])
+  @@index([market, interval, bucketStart(sort: Desc)])
+  @@map("Kline")
 }
 
 model TickerSnapshot {
@@ -99,4 +146,5 @@ model TickerSnapshot {
   timestamp          DateTime
 
   @@index([market, timestamp(sort: Desc)])
+  @@map("TickerSnapshot")
 }
