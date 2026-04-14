@@ -5,6 +5,7 @@ import type {
   EngineCommandResult, 
   EngineEvent,
 } from "@workspace/types";
+import { env } from "@workspace/env/server";
 import { Engine } from "./trade/Engine.js";
 
 // Redis channels - inline as per junior dev style
@@ -19,8 +20,8 @@ const REDIS_KEYS = {
 };
 
 // Create Redis clients inline
-const consumer = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
-const publisher = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+const consumer = new Redis(env.REDIS_URL || "redis://localhost:6379");
+const publisher = new Redis(env.REDIS_URL || "redis://localhost:6379");
 const engine = new Engine();
 
 async function start() {
@@ -86,11 +87,13 @@ async function handleCommand(command: EngineCommand) {
             await publishEvent("ORDER_UPDATED", payload.market, { 
                 orderId: fill.makerOrderId, 
                 userId: fill.otherUserId, 
+                market: payload.market, // Added for DB Worker
                 filledQuantity: fill.makerFilledQuantity, 
                 status: fill.makerStatus 
             });
             await publishEvent("TRADE_CREATED", payload.market, {
                 tradeId: fill.tradeId,
+                market: payload.market, // Added for DB Worker consistency
                 price: fill.price,
                 quantity: fill.qty,
                 buyerUserId: payload.side === "buy" ? payload.userId : fill.otherUserId,
@@ -98,6 +101,14 @@ async function handleCommand(command: EngineCommand) {
                 timestamp: Date.now()
             });
         }
+
+        // Broadcast Ticker Update
+        const ticker = engine.getTicker(payload.market);
+        await publishEvent("TICKER_UPDATED", payload.market, {
+            ...ticker,
+            market: payload.market,
+            timestamp: Date.now()
+        });
 
     } else if (type === "CANCEL_ORDER") {
         const result = engine.cancelOrder(payload.market, payload.orderId);

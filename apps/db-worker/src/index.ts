@@ -1,6 +1,7 @@
 import { Redis } from "ioredis";
 import { prisma } from "@workspace/database";
-import type { EngineEvent } from "@workspace/types";
+import { EngineEvent } from "@workspace/types";
+import { env } from "@workspace/env/server";
 
 // Redis channels - inline as per junior dev style
 const REDIS_CHANNELS = {
@@ -8,7 +9,7 @@ const REDIS_CHANNELS = {
 };
 
 // Create Redis client inline
-const subscriber = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+const subscriber = new Redis(env.REDIS_URL || "redis://localhost:6379");
 
 async function start() {
     await subscriber.subscribe(REDIS_CHANNELS.EVENTS);

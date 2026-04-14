@@ -1,17 +1,19 @@
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { config } from "dotenv";
 import { envSchema } from "@workspace/types";
 
-const currentDir = dirname(fileURLToPath(import.meta.url));
-const envFiles = [
-  resolve(currentDir, "../../../.env.local"),
-  resolve(currentDir, "../../../.env"),
-].filter(existsSync);
+/**
+ * Browser-safe environment variables.
+ * In Next.js, process.env is provided by the build system.
+ * On the client, only NEXT_PUBLIC_ variables are available.
+ */
+const isServer = typeof window === "undefined";
 
-if (envFiles.length > 0) {
-  config({ path: envFiles, override: false });
+// Use safeParse to avoid crashing the browser if server-only variables are missing.
+const parsed = isServer 
+    ? envSchema.safeParse(process.env)
+    : envSchema.partial().safeParse(process.env);
+
+if (!parsed.success && isServer) {
+  console.error("❌ Invalid environment variables:", parsed.error.format());
 }
 
-export const env = envSchema.parse(process.env);
+export const env = (parsed.success ? parsed.data : process.env) as any;
