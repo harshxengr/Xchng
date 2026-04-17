@@ -3,7 +3,6 @@ import type { Session } from "@workspace/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { env } from "@workspace/env";
 
 /**
  * Get the current session. Returns null if not authenticated.

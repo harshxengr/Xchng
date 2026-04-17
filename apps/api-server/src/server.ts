@@ -1,11 +1,10 @@
-import { createServer } from "node:net";
 import express from "express";
 import cors from "cors";
 import crypto from "node:crypto";
 import { Redis } from "ioredis";
 import { prisma } from "@workspace/database";
 import { env } from "@workspace/env/server";
-import type { PlaceOrderInput, EngineCommandResult } from "@workspace/types";
+import type { EngineCommandResult } from "@workspace/types";
 
 const app = express();
 const port = env.PORT || 4000;
@@ -13,63 +12,175 @@ const port = env.PORT || 4000;
 // Redis channels - inline as per junior dev style
 const REDIS_CHANNELS = {
   COMMANDS: "engine:commands",
-  EVENTS: "engine:events",
-  rpcResponse: (requestId: string) => `rpc.response.${requestId}`,
 };
 
 const REDIS_KEYS = {
   depth: (market: string) => `depth:${market}`,
 };
+const MM_REDIS_KEYS = {
+  control: (market: string) => `mm-bot:control:${market}`,
+  status: (market: string) => `mm-bot:status:${market}`,
+};
+const MM_MARKETS = (process.env.MM_MARKETS || "TATA_INR")
+  .split(",")
+  .map((market) => market.trim())
+  .filter(Boolean);
 
 // Create Redis clients inline
 const redisPublisher = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+const redisSubscriber = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+type PendingRequest = {
+    resolve: (value: unknown) => void;
+    reject: (error: Error) => void;
+    timeout: NodeJS.Timeout;
+};
+const pendingRequests = new Map<string, PendingRequest>();
+
+redisSubscriber.psubscribe("rpc.response.*");
+redisSubscriber.on("pmessage", (_pattern, channel, message) => {
+    const requestId = channel.replace("rpc.response.", "");
+    const pending = pendingRequests.get(requestId);
+    if (!pending) {
+        return;
+    }
+
+    clearTimeout(pending.timeout);
+    pendingRequests.delete(requestId);
+
+    try {
+        const result = JSON.parse(message) as EngineCommandResult<unknown>;
+        if (result.ok) {
+            pending.resolve(result.data);
+            return;
+        }
+        pending.reject(new Error(result.error || "Engine error"));
+    } catch (error) {
+        pending.reject(error instanceof Error ? error : new Error("Invalid engine response"));
+    }
+});
 
 app.use(cors());
 app.use(express.json());
 
 // --- INTERNAL HELPERS ---
 
-/**
- * Simplified RPC over Redis.
- * Sends a command to the engine and waits for a response on a unique channel.
- */
+// Sends a command to the engine and waits for the response with a request id.
 async function sendCommandToEngine<T>(type: string, payload: any): Promise<T> {
     const requestId = crypto.randomUUID();
-    const responseChannel = REDIS_CHANNELS.rpcResponse(requestId);
-    
-    // Create a temporary subscriber for this request
-    const subscriber = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
-    await subscriber.subscribe(responseChannel);
-
     return new Promise<T>((resolve, reject) => {
-        const timeout = setTimeout(async () => {
-            await subscriber.unsubscribe(responseChannel);
-            subscriber.disconnect();
+        const timeout = setTimeout(() => {
+            pendingRequests.delete(requestId);
             reject(new Error("Engine timeout"));
         }, 5000);
 
-        subscriber.on("message", async (channel, message) => {
-            if (channel === responseChannel) {
-                clearTimeout(timeout);
-                await subscriber.unsubscribe(responseChannel);
-                subscriber.disconnect();
-
-                const result = JSON.parse(message) as EngineCommandResult<T>;
-                if (result.ok) {
-                    resolve(result.data!);
-                } else {
-                    reject(new Error(result.error || "Engine error"));
-                }
-            }
+        pendingRequests.set(requestId, {
+            timeout,
+            resolve: (value) => resolve(value as T),
+            reject
         });
 
-        // Send the command to the engine's queue
+        // Push command in Redis list for the matching engine worker.
         redisPublisher.rpush(REDIS_CHANNELS.COMMANDS, JSON.stringify({
             type,
             requestId,
             payload
-        }));
+        })).catch((error) => {
+            clearTimeout(timeout);
+            pendingRequests.delete(requestId);
+            reject(error instanceof Error ? error : new Error("Failed to publish command"));
+        });
     });
+}
+
+type MmBotStatus = {
+    market: string;
+    paused: boolean;
+    health: "healthy" | "paused" | "stale" | "degraded";
+    referencePrice: number;
+    activeBidOrders: number;
+    activeAskOrders: number;
+    desiredBidQuotes: number;
+    desiredAskQuotes: number;
+    totalQuotesPlaced: number;
+    totalQuotesCancelled: number;
+    bidBaseInventory: number;
+    bidQuoteInventory: number;
+    askBaseInventory: number;
+    askQuoteInventory: number;
+    loopCount: number;
+    successCount: number;
+    errorCount: number;
+    consecutiveErrorCount: number;
+    inventorySkewBps: number;
+    lastCyclePlaced: number;
+    lastCycleCancelled: number;
+    lastLoopDurationMs: number | null;
+    lastSuccessAt: number | null;
+    lastRefreshAt: number | null;
+    controlUpdatedAt: number | null;
+    startedAt: number | null;
+    lastError: string | null;
+};
+
+function buildDefaultMmStatus(market: string, paused: boolean): MmBotStatus {
+    return {
+        market,
+        paused,
+        health: paused ? "paused" : "stale",
+        referencePrice: 0,
+        activeBidOrders: 0,
+        activeAskOrders: 0,
+        desiredBidQuotes: 1,
+        desiredAskQuotes: 1,
+        totalQuotesPlaced: 0,
+        totalQuotesCancelled: 0,
+        bidBaseInventory: 0,
+        bidQuoteInventory: 0,
+        askBaseInventory: 0,
+        askQuoteInventory: 0,
+        loopCount: 0,
+        successCount: 0,
+        errorCount: 0,
+        consecutiveErrorCount: 0,
+        inventorySkewBps: 0,
+        lastCyclePlaced: 0,
+        lastCycleCancelled: 0,
+        lastLoopDurationMs: null,
+        lastSuccessAt: null,
+        lastRefreshAt: null,
+        controlUpdatedAt: null,
+        startedAt: null,
+        lastError: null
+    };
+}
+
+async function getMmBotStatuses(): Promise<MmBotStatus[]> {
+    const statuses = await Promise.all(
+        MM_MARKETS.map(async (market) => {
+            const [statusRaw, controlRaw] = await Promise.all([
+                redisPublisher.get(MM_REDIS_KEYS.status(market)),
+                redisPublisher.get(MM_REDIS_KEYS.control(market))
+            ]);
+
+            const paused =
+                typeof controlRaw === "string"
+                    ? JSON.parse(controlRaw).paused === true
+                    : false;
+
+            if (!statusRaw) {
+                return buildDefaultMmStatus(market, paused);
+            }
+
+            try {
+                const parsed = JSON.parse(statusRaw) as MmBotStatus;
+                return { ...parsed, paused };
+            } catch {
+                return buildDefaultMmStatus(market, paused);
+            }
+        })
+    );
+
+    return statuses;
 }
 
 // --- API ROUTES ---
@@ -222,6 +333,68 @@ app.post("/api/v1/deposit", async (req, res) => {
     try {
         const result = await sendCommandToEngine("DEPOSIT", req.body);
         res.json(result);
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.get("/api/v1/mm-bot/statuses", async (_req, res) => {
+    try {
+        const statuses = await getMmBotStatuses();
+        res.json(statuses);
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.get("/api/v1/mm-bot/status", async (_req, res) => {
+    try {
+        const statuses = await getMmBotStatuses();
+        res.json(statuses);
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.post("/api/v1/mm-bot/paused", async (req, res) => {
+    try {
+        const { botId, paused } = req.body as { botId?: string; paused?: boolean };
+        if (!botId || typeof paused !== "boolean") {
+            res.status(400).json({ success: false, error: "botId and paused are required" });
+            return;
+        }
+
+        await redisPublisher.set(
+            MM_REDIS_KEYS.control(botId),
+            JSON.stringify({
+                paused,
+                updatedAt: Date.now()
+            })
+        );
+
+        res.json({ success: true });
+    } catch (e: any) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+app.post("/api/v1/mm-bot/control", async (req, res) => {
+    try {
+        const { botId, paused } = req.body as { botId?: string; paused?: boolean };
+        if (!botId || typeof paused !== "boolean") {
+            res.status(400).json({ success: false, error: "botId and paused are required" });
+            return;
+        }
+
+        await redisPublisher.set(
+            MM_REDIS_KEYS.control(botId),
+            JSON.stringify({
+                paused,
+                updatedAt: Date.now()
+            })
+        );
+
+        res.json({ success: true });
     } catch (e: any) {
         res.status(400).json({ success: false, error: e.message });
     }

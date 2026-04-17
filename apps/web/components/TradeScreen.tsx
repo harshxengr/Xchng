@@ -1,802 +1,431 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-    ArrowDownRight,
-    ArrowUpRight,
-    CandlestickChart,
-    CircleDot,
-    Landmark,
-    Layers3,
-    RadioTower,
-    ReceiptText,
-    Wallet
-} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { createChart, CandlestickSeries, ColorType, type UTCTimestamp } from "lightweight-charts";
+import { Menu, Search } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
+import { SignOutButton } from "@/components/auth/sign-out-button";
 import {
-    cancelOrder,
-    getBalances,
-    getDepth,
-    getOpenOrders,
-    getTicker,
-    getTrades,
-    getWsUrl,
-    placeOrder,
-    type Depth,
-    type OpenOrder,
-    type Ticker,
-    type Trade
+  getBalances,
+  getDepth,
+  getTicker,
+  getTickers,
+  getTrades,
+  getWsUrl,
+  placeOrder,
+  type Depth,
+  type Ticker,
+  type Trade
 } from "@/app/lib/api";
 
-type WsDepthMessage = {
-    type: "depth";
-    symbol: string;
-    data: Depth;
+type WsDepthMessage = { type: "depth"; symbol: string; data: Depth };
+type WsTradeMessage = { type: "trade"; symbol: string; data: Trade };
+type WsTickerMessage = { type: "ticker"; symbol: string; data: Ticker };
+
+type SessionUser = {
+  name?: string | null;
+  email?: string | null;
 };
 
-type WsTradeMessage = {
-    type: "trade";
-    symbol: string;
-    data: Trade;
-};
+type AssetBalance = { available: number; locked: number };
+type OrderType = "limit" | "market";
+type OrderSide = "buy" | "sell";
 
-type WsTickerMessage = {
-    type: "ticker";
-    symbol: string;
-    data: Ticker;
-};
-
-type AssetBalance = {
-    available: number;
-    locked: number;
-};
-
+const EMPTY_BALANCE: AssetBalance = { available: 0, locked: 0 };
 const DEFAULT_TICKER: Ticker = {
-    symbol: "",
-    lastPrice: "0",
-    high: "0",
-    low: "0",
-    volume: "0",
-    quoteVolume: "0",
-    firstPrice: "0",
-    priceChange: "0",
-    priceChangePercent: "0",
-    trades: 0
+  symbol: "",
+  lastPrice: "0",
+  high: "0",
+  low: "0",
+  volume: "0",
+  quoteVolume: "0",
+  firstPrice: "0",
+  priceChange: "0",
+  priceChangePercent: "0",
+  trades: 0
 };
 
-const EMPTY_BALANCE: AssetBalance = {
-    available: 0,
-    locked: 0
-};
+const MINUTE_MS = 60_000;
+
+function formatNumber(value: number, digits = 2) {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function formatPct(value: number) {
+  if (!Number.isFinite(value)) return "0.00%";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
 
 function isObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function hasType(value: unknown): value is { type: string } {
-    return isObject(value) && typeof value.type === "string";
+  return isObject(value) && typeof value.type === "string";
 }
 
 function isWsDepthMessage(value: unknown): value is WsDepthMessage {
-    return hasType(value) && value.type === "depth" && "data" in value;
+  return hasType(value) && value.type === "depth" && "data" in value;
 }
-
 function isWsTradeMessage(value: unknown): value is WsTradeMessage {
-    return hasType(value) && value.type === "trade" && "data" in value;
+  return hasType(value) && value.type === "trade" && "data" in value;
 }
-
 function isWsTickerMessage(value: unknown): value is WsTickerMessage {
-    return hasType(value) && value.type === "ticker" && "data" in value;
+  return hasType(value) && value.type === "ticker" && "data" in value;
 }
 
-function formatNumber(value: number, digits = 2) {
-    return new Intl.NumberFormat("en-IN", {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: digits
-    }).format(Number.isFinite(value) ? value : 0);
-}
-
-function formatSignedNumber(value: number, digits = 2) {
-    const formatted = formatNumber(Math.abs(value), digits);
-    if (value === 0) {
-        return formatted;
+function buildCandles(trades: Trade[]) {
+  const byBucket = new Map<number, { time: UTCTimestamp; open: number; high: number; low: number; close: number }>();
+  for (const trade of [...trades].reverse()) {
+    const price = Number(trade.price);
+    const bucketMs = Math.floor(trade.timestamp / MINUTE_MS) * MINUTE_MS;
+    const bucketSec = Math.floor(bucketMs / 1000);
+    const existing = byBucket.get(bucketSec);
+    if (!existing) {
+      byBucket.set(bucketSec, { time: bucketSec as UTCTimestamp, open: price, high: price, low: price, close: price });
+      continue;
     }
-
-    return `${value > 0 ? "+" : "-"}${formatted}`;
+    existing.high = Math.max(existing.high, price);
+    existing.low = Math.min(existing.low, price);
+    existing.close = price;
+  }
+  return [...byBucket.values()].sort((a, b) => a.time - b.time);
 }
 
-function formatTime(timestamp: number) {
-    return new Date(timestamp).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit"
+function LightweightCandleChart({ trades }: { trades: Trade[] }) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
+  const seriesRef = useRef<ReturnType<ReturnType<typeof createChart>["addSeries"]> | null>(null);
+
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+
+    const chart = createChart(el, {
+      layout: { textColor: "#94a3b8", background: { type: ColorType.Solid, color: "#070b12" } },
+      grid: {
+        vertLines: { color: "rgba(148,163,184,0.08)" },
+        horzLines: { color: "rgba(148,163,184,0.08)" }
+      },
+      rightPriceScale: { borderVisible: false },
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+      crosshair: { vertLine: { color: "#334155" }, horzLine: { color: "#334155" } }
     });
+    const series = chart.addSeries(CandlestickSeries, {
+      upColor: "#0ecb81",
+      downColor: "#f6465d",
+      borderUpColor: "#0ecb81",
+      borderDownColor: "#f6465d",
+      wickUpColor: "#0ecb81",
+      wickDownColor: "#f6465d"
+    });
+
+    chartRef.current = chart;
+    seriesRef.current = series;
+
+    const resize = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? el.clientWidth;
+      chart.applyOptions({ width, height: 420 });
+    });
+    resize.observe(el);
+    chart.applyOptions({ width: el.clientWidth, height: 420 });
+
+    return () => {
+      resize.disconnect();
+      chart.remove();
+      chartRef.current = null;
+      seriesRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!seriesRef.current) return;
+    const candles = buildCandles(trades);
+    seriesRef.current.setData(candles);
+    chartRef.current?.timeScale().fitContent();
+  }, [trades]);
+
+  return <div ref={wrapperRef} className="h-[420px] w-full rounded-sm" />;
 }
 
-function panelClassName(className = "") {
-    return `rounded-[28px] border border-white/10 bg-slate-950/70 shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl ${className}`.trim();
-}
+export function TradeScreen({ market, sessionUser = null }: { market: string; sessionUser?: SessionUser | null }) {
+  const [depth, setDepth] = useState<Depth>({ bids: [], asks: [] });
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [ticker, setTicker] = useState<Ticker>({ ...DEFAULT_TICKER, symbol: market });
+  const [balances, setBalances] = useState<Record<string, AssetBalance>>({});
+  const [allTickers, setAllTickers] = useState<Ticker[]>([]);
+  const [userId, setUserId] = useState("1");
+  const [side, setSide] = useState<OrderSide>("buy");
+  const [orderType, setOrderType] = useState<OrderType>("limit");
+  const [price, setPrice] = useState("0");
+  const [quantity, setQuantity] = useState("1");
+  const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-export function TradeScreen({ market }: { market: string }) {
-    const [depth, setDepth] = useState<Depth>({ bids: [], asks: [] });
-    const [trades, setTrades] = useState<Trade[]>([]);
-    const [ticker, setTicker] = useState<Ticker>({ ...DEFAULT_TICKER, symbol: market });
-    const [balances, setBalances] = useState<Record<string, AssetBalance>>({});
-    const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
-    const [userId, setUserId] = useState("1");
-    const [side, setSide] = useState<"buy" | "sell">("buy");
-    const [price, setPrice] = useState("100");
-    const [quantity, setQuantity] = useState("1");
-    const [message, setMessage] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
-    const [isInitialLoading, setIsInitialLoading] = useState(true);
-    const [streamStatus, setStreamStatus] = useState<"connecting" | "live" | "offline">("connecting");
+  const [baseAsset, quoteAsset] = useMemo(() => {
+    const [base = "", quote = ""] = market.split("_");
+    return [base, quote] as const;
+  }, [market]);
 
-    const [baseAsset, quoteAsset] = useMemo(() => {
-        const [base = "", quote = ""] = market.split("_");
-        return [base, quote] as const;
-    }, [market]);
+  const bestBid = Number(depth.bids[0]?.[0] ?? 0);
+  const bestAsk = Number(depth.asks[0]?.[0] ?? 0);
+  const currentPrice = Number(ticker.lastPrice || 0);
+  const changePercent = Number(ticker.priceChangePercent || 0);
 
-    const baseBalance = balances[baseAsset] ?? EMPTY_BALANCE;
-    const quoteBalance = balances[quoteAsset] ?? EMPTY_BALANCE;
+  const quoteBalance = balances[quoteAsset] ?? EMPTY_BALANCE;
+  const baseBalance = balances[baseAsset] ?? EMPTY_BALANCE;
+  const calculatedPrice = orderType === "market" ? (side === "buy" ? bestAsk || currentPrice : bestBid || currentPrice) : Number(price);
+  const estimatedValue = calculatedPrice * Number(quantity || 0);
 
-    const bestBid = depth.bids[0]?.[0] ? Number(depth.bids[0][0]) : 0;
-    const bestAsk = depth.asks[0]?.[0] ? Number(depth.asks[0][0]) : 0;
-    const spread = bestAsk > 0 && bestBid > 0 ? bestAsk - bestBid : 0;
+  const asks = depth.asks.slice(0, 18);
+  const bids = depth.bids.slice(0, 18);
+  const maxDepthQty = Math.max(
+    1,
+    ...asks.map(([, q]) => Number(q)),
+    ...bids.map(([, q]) => Number(q))
+  );
 
-    const orderPrice = Number(price);
-    const orderQuantity = Number(quantity);
-    const orderValue = orderPrice * orderQuantity;
-    const latestPrice = Number(ticker.lastPrice || 0);
-    const priceChange = Number(ticker.priceChange || 0);
-    const priceChangePercent = Number(ticker.priceChangePercent || 0);
-    const notionalBalance = quoteBalance.available + quoteBalance.locked;
-    const basePosition = baseBalance.available + baseBalance.locked;
-    const portfolioEstimate = notionalBalance + basePosition * latestPrice;
-
-    const askLevels = depth.asks.slice(0, 8);
-    const bidLevels = depth.bids.slice(0, 8);
-
-    const askMaxQuantity = askLevels.reduce((max: number, [, qty]) => Math.max(max, Number(qty)), 0);
-    const bidMaxQuantity = bidLevels.reduce((max: number, [, qty]) => Math.max(max, Number(qty)), 0);
-    const depthMaxQuantity = Math.max(askMaxQuantity, bidMaxQuantity, 1);
-
-    const tradeCountLabel = `${trades.length} prints`;
-    const statusTone =
-        side === "buy"
-            ? "border-emerald-500/40 bg-emerald-500/12 text-emerald-200"
-            : "border-rose-500/40 bg-rose-500/12 text-rose-200";
-    const streamTone =
-        streamStatus === "live"
-            ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-200"
-            : streamStatus === "connecting"
-              ? "border-amber-500/35 bg-amber-500/10 text-amber-200"
-              : "border-rose-500/35 bg-rose-500/10 text-rose-200";
-    const messageTone = message.toLowerCase().includes("fail")
-        ? "border-rose-500/35 bg-rose-500/10 text-rose-200"
-        : "border-sky-500/35 bg-sky-500/10 text-sky-200";
-
-    async function loadAll(selectedUserId: string) {
-        setIsInitialLoading(true);
-
-        try {
-            const [depthData, tradesData, tickerData, balanceData, openOrdersData] = await Promise.all([
-                getDepth(market),
-                getTrades(market),
-                getTicker(market),
-                getBalances(selectedUserId),
-                getOpenOrders(market, selectedUserId)
-            ]);
-
-            setDepth(depthData);
-            setTrades(tradesData);
-            setTicker(tickerData);
-            setBalances(balanceData);
-            setOpenOrders(openOrdersData);
-        } catch (error) {
-            setMessage(error instanceof Error ? error.message : "Failed to load market");
-        } finally {
-            setIsInitialLoading(false);
-        }
-    }
-
-    async function refreshUserData(selectedUserId: string) {
-        const [balanceData, openOrdersData] = await Promise.all([
-            getBalances(selectedUserId),
-            getOpenOrders(market, selectedUserId)
+  useEffect(() => {
+    async function load() {
+      try {
+        const [depthData, tradeData, tickerData, balanceData, tickers] = await Promise.all([
+          getDepth(market),
+          getTrades(market),
+          getTicker(market),
+          getBalances(userId),
+          getTickers()
         ]);
-
+        setDepth(depthData);
+        setTrades(tradeData);
+        setTicker(tickerData);
         setBalances(balanceData);
-        setOpenOrders(openOrdersData);
+        setAllTickers(tickers);
+        if (!price || Number(price) <= 0) setPrice(String(Number(tickerData.lastPrice || 0) || 0));
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Failed to load market");
+      }
     }
+    void load();
+  }, [market, userId, price]);
 
-    useEffect(() => {
-        void loadAll(userId);
-    }, [market, userId]);
+  useEffect(() => {
+    const ws = new WebSocket(getWsUrl());
+    ws.onopen = () => {
+      ws.send(
+        JSON.stringify({
+          method: "SUBSCRIBE",
+          params: [`depth@${market}`, `trade@${market}`, `ticker@${market}`]
+        })
+      );
+    };
+    ws.onmessage = (event) => {
+      const parsed: unknown = JSON.parse(event.data);
+      if (isWsDepthMessage(parsed)) setDepth(parsed.data);
+      if (isWsTradeMessage(parsed)) setTrades((prev) => [parsed.data, ...prev].slice(0, 250));
+      if (isWsTickerMessage(parsed)) setTicker(parsed.data);
+    };
+    return () => ws.close();
+  }, [market]);
 
-    useEffect(() => {
-        setStreamStatus("connecting");
-        const ws = new WebSocket(getWsUrl());
-
-        ws.onopen = () => {
-            setStreamStatus("live");
-            ws.send(
-                JSON.stringify({
-                    method: "SUBSCRIBE",
-                    params: [`depth@${market}`, `trade@${market}`, `ticker@${market}`]
-                })
-            );
-        };
-
-        ws.onmessage = (event) => {
-            const parsed: unknown = JSON.parse(event.data);
-
-            if (isWsDepthMessage(parsed)) {
-                setDepth(parsed.data);
-                return;
-            }
-
-            if (isWsTradeMessage(parsed)) {
-                setTrades((current) => [parsed.data, ...current].slice(0, 20));
-                return;
-            }
-
-            if (isWsTickerMessage(parsed)) {
-                setTicker(parsed.data);
-            }
-        };
-
-        ws.onerror = () => {
-            setStreamStatus("offline");
-        };
-
-        ws.onclose = () => {
-            setStreamStatus("offline");
-        };
-
-        return () => {
-            ws.close();
-        };
-    }, [market]);
-
-    async function onSubmit() {
-        try {
-            setLoading(true);
-            setMessage("");
-
-            await placeOrder({
-                market,
-                userId,
-                side,
-                price: Number(price),
-                quantity: Number(quantity)
-            });
-
-            await refreshUserData(userId);
-            setMessage("Order placed successfully");
-        } catch (error) {
-            setMessage(error instanceof Error ? error.message : "Failed to place order");
-        } finally {
-            setLoading(false);
-        }
+  async function onPlaceOrder() {
+    try {
+      setIsSubmitting(true);
+      setMessage("");
+      await placeOrder({
+        market,
+        userId,
+        side,
+        quantity: Number(quantity),
+        // backend currently accepts price only; for market orders we execute at best level
+        price: calculatedPrice
+      });
+      setMessage(`${side.toUpperCase()} ${orderType.toUpperCase()} order placed`);
+      const balanceData = await getBalances(userId);
+      setBalances(balanceData);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to place order");
+    } finally {
+      setIsSubmitting(false);
     }
+  }
 
-    async function onCancel(orderId: string) {
-        try {
-            setCancelingOrderId(orderId);
-            setMessage("");
+  return (
+    <main className="min-h-screen bg-[#070a11] text-white">
+      <div className="mx-auto max-w-[1800px] px-3 py-3">
+        <header className="flex items-center justify-between border-b border-white/10 px-2 pb-3">
+          <div className="flex items-center gap-6">
+            <button className="rounded-md p-1 text-slate-300 hover:bg-white/10"><Menu className="size-5" /></button>
+            <nav className="flex items-center gap-6 text-sm">
+              <Link href="/" className="font-medium text-white">Exchange</Link>
+              <Link href="/markets" className="text-slate-300 hover:text-white">Markets</Link>
+              <Link href={`/trade/${market}`} className="text-slate-300 hover:text-white">Trade</Link>
+            </nav>
+          </div>
+          <div className="flex items-center gap-3">
+            {sessionUser ? (
+              <>
+                <div className="hidden text-right text-xs sm:block">
+                  <p className="font-medium text-slate-100">{sessionUser.name || "Trader"}</p>
+                  <p className="text-slate-400">{sessionUser.email || ""}</p>
+                </div>
+                <div className="hidden [&>button]:rounded-lg [&>button]:border-white/20 [&>button]:bg-transparent [&>button]:text-slate-100 sm:block">
+                  <SignOutButton />
+                </div>
+              </>
+            ) : (
+              <>
+                <Link href="/sign-in" className="rounded-md border border-white/15 px-3 py-1.5 text-sm text-slate-100 hover:bg-white/10">Sign in</Link>
+                <Link href="/sign-up" className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-emerald-400">Sign up</Link>
+              </>
+            )}
+          </div>
+        </header>
 
-            await cancelOrder({
-                market,
-                orderId
-            });
+        <section className="mt-2 flex items-center justify-between border-b border-white/10 px-2 py-2 text-xs">
+          <div className="flex items-center gap-5">
+            <div className="font-semibold">{baseAsset} / {quoteAsset}</div>
+            <div className="text-emerald-400">${formatNumber(currentPrice, 2)}</div>
+            <div className={changePercent >= 0 ? "text-emerald-400" : "text-rose-400"}>{formatPct(changePercent)}</div>
+            <div className="text-slate-300">24H High {ticker.high}</div>
+            <div className="text-slate-300">24H Low {ticker.low}</div>
+            <div className="text-slate-300">24H Vol {ticker.quoteVolume}</div>
+          </div>
+          <button className="rounded p-1 text-slate-400 hover:bg-white/10"><Search className="size-4" /></button>
+        </section>
 
-            await refreshUserData(userId);
-            setMessage("Order cancelled successfully");
-        } catch (error) {
-            setMessage(error instanceof Error ? error.message : "Failed to cancel order");
-        } finally {
-            setCancelingOrderId(null);
-        }
-    }
+        {message ? <p className="mt-2 rounded border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200">{message}</p> : null}
 
-    return (
-        <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.18),_transparent_24%),radial-gradient(circle_at_top_right,_rgba(56,189,248,0.16),_transparent_26%),linear-gradient(180deg,_#020617_0%,_#020617_42%,_#07111f_100%)] text-slate-100">
-            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.06)_1px,transparent_1px)] bg-[size:90px_90px] opacity-20" />
+        <section className="mt-3 grid gap-3 xl:grid-cols-[1.9fr_0.9fr_0.8fr]">
+          <div className="rounded border border-white/10 bg-[#0b111b] p-2">
+            <LightweightCandleChart trades={trades} />
+          </div>
 
-            <div className="relative mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-4 sm:px-6 lg:px-8">
-                <section className={`${panelClassName()} overflow-hidden`}>
-                    <div className="flex flex-col gap-6 px-5 py-5 lg:flex-row lg:items-center lg:justify-between lg:px-7">
-                        <div className="space-y-4">
-                            <div className="flex flex-wrap items-center gap-3">
-                                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.24em] text-slate-300">
-                                    <CandlestickChart className="size-3.5" />
-                                    Spot Market
-                                </span>
-                                <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${streamTone}`}>
-                                    <RadioTower className="size-3.5" />
-                                    {streamStatus === "live" ? "Stream live" : streamStatus === "connecting" ? "Connecting" : "Stream offline"}
-                                </span>
-                            </div>
-
-                            <div className="space-y-2">
-                                <div className="flex flex-wrap items-end gap-3">
-                                    <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                                        {baseAsset || "Market"}/{quoteAsset || "Pair"}
-                                    </h1>
-                                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-slate-300">
-                                        {market}
-                                    </span>
-                                </div>
-                                <p className="max-w-2xl text-sm leading-6 text-slate-400">
-                                    Professional market view with live order flow, account balances, and one-click order management.
-                                </p>
-                            </div>
-
-                            <div className="flex flex-wrap gap-3">
-                                <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium ${statusTone}`}>
-                                    {side === "buy" ? <ArrowUpRight className="size-4" /> : <ArrowDownRight className="size-4" />}
-                                    {side === "buy" ? "Buy bias" : "Sell bias"}
-                                </div>
-                                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-300">
-                                    <CircleDot className="size-4 text-sky-300" />
-                                    {tradeCountLabel}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                            <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Last price</p>
-                                <div className="mt-3 flex items-end gap-2">
-                                    <span className="text-2xl font-semibold text-white">{formatNumber(latestPrice, 2)}</span>
-                                    <span className={`mb-1 text-sm font-medium ${priceChange >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-                                        {formatSignedNumber(priceChangePercent, 2)}%
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">24h range</p>
-                                <div className="mt-3 text-sm text-slate-200">
-                                    <div className="flex items-center justify-between">
-                                        <span>Low</span>
-                                        <span>{ticker.low}</span>
-                                    </div>
-                                    <div className="mt-2 flex items-center justify-between">
-                                        <span>High</span>
-                                        <span>{ticker.high}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Spread</p>
-                                <div className="mt-3 text-2xl font-semibold text-white">{formatNumber(spread, 2)}</div>
-                                <p className="mt-1 text-sm text-slate-400">
-                                    Bid {formatNumber(bestBid, 2)} / Ask {formatNumber(bestAsk, 2)}
-                                </p>
-                            </div>
-                            <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Quote volume</p>
-                                <div className="mt-3 text-2xl font-semibold text-white">{ticker.quoteVolume}</div>
-                                <p className="mt-1 text-sm text-slate-400">{ticker.trades} trades matched</p>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                {message ? (
-                    <section className={`${panelClassName(messageTone)} px-5 py-4 text-sm font-medium`}>
-                        {message}
-                    </section>
-                ) : null}
-
-                <section className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)_380px]">
-                    <div className="flex flex-col gap-6">
-                        <section className={`${panelClassName()} p-5`}>
-                            <div className="mb-5 flex items-center justify-between">
-                                <div>
-                                    <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Order Entry</p>
-                                    <h2 className="mt-2 text-xl font-semibold text-white">Place order</h2>
-                                </div>
-                                <div className={`rounded-full border px-3 py-1 text-xs font-medium ${statusTone}`}>
-                                    {side === "buy" ? "Long flow" : "Sell flow"}
-                                </div>
-                            </div>
-
-                            <div className="grid gap-4">
-                                <label className="grid gap-2">
-                                    <span className="text-sm text-slate-400">Trader</span>
-                                    <select
-                                        value={userId}
-                                        onChange={(e) => setUserId(e.target.value)}
-                                        className="h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-slate-100 outline-none transition focus:border-sky-400/60 focus:bg-slate-900"
-                                    >
-                                        <option value="1">User 1</option>
-                                        <option value="2">User 2</option>
-                                        <option value="5">User 5</option>
-                                    </select>
-                                </label>
-
-                                <div className="grid grid-cols-2 gap-2 rounded-[22px] border border-white/10 bg-white/5 p-1">
-                                    <button
-                                        type="button"
-                                        className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${
-                                            side === "buy"
-                                                ? "bg-emerald-500 text-slate-950 shadow-[0_10px_30px_rgba(16,185,129,0.35)]"
-                                                : "text-slate-300 hover:bg-white/5"
-                                        }`}
-                                        onClick={() => setSide("buy")}
-                                    >
-                                        Buy {baseAsset || "Asset"}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${
-                                            side === "sell"
-                                                ? "bg-rose-500 text-white shadow-[0_10px_30px_rgba(244,63,94,0.32)]"
-                                                : "text-slate-300 hover:bg-white/5"
-                                        }`}
-                                        onClick={() => setSide("sell")}
-                                    >
-                                        Sell {baseAsset || "Asset"}
-                                    </button>
-                                </div>
-
-                                <label className="grid gap-2">
-                                    <span className="text-sm text-slate-400">Limit price</span>
-                                    <div className="relative">
-                                        <Input
-                                            value={price}
-                                            onChange={(e) => setPrice(e.target.value)}
-                                            type="number"
-                                            className="h-12 rounded-2xl border-white/10 bg-white/5 px-4 pr-16 text-slate-100"
-                                        />
-                                        <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-xs uppercase tracking-[0.2em] text-slate-500">
-                                            {quoteAsset || "Quote"}
-                                        </span>
-                                    </div>
-                                </label>
-
-                                <label className="grid gap-2">
-                                    <span className="text-sm text-slate-400">Quantity</span>
-                                    <div className="relative">
-                                        <Input
-                                            value={quantity}
-                                            onChange={(e) => setQuantity(e.target.value)}
-                                            type="number"
-                                            className="h-12 rounded-2xl border-white/10 bg-white/5 px-4 pr-16 text-slate-100"
-                                        />
-                                        <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-xs uppercase tracking-[0.2em] text-slate-500">
-                                            {baseAsset || "Base"}
-                                        </span>
-                                    </div>
-                                </label>
-
-                                <div className="rounded-[24px] border border-white/10 bg-gradient-to-br from-white/8 to-white/[0.03] p-4">
-                                    <div className="flex items-center justify-between text-sm">
-                                        <span className="text-slate-400">Estimated value</span>
-                                        <span className="font-medium text-white">
-                                            {formatNumber(orderValue, 2)} {quoteAsset}
-                                        </span>
-                                    </div>
-                                    <div className="mt-3 flex items-center justify-between text-sm">
-                                        <span className="text-slate-400">Available quote</span>
-                                        <span className="text-slate-200">
-                                            {formatNumber(quoteBalance.available, 2)} {quoteAsset}
-                                        </span>
-                                    </div>
-                                    <div className="mt-3 flex items-center justify-between text-sm">
-                                        <span className="text-slate-400">Available base</span>
-                                        <span className="text-slate-200">
-                                            {formatNumber(baseBalance.available, 2)} {baseAsset}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <Button
-                                    className={`h-12 rounded-2xl text-sm font-semibold ${
-                                        side === "buy"
-                                            ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
-                                            : "bg-rose-500 text-white hover:bg-rose-400"
-                                    }`}
-                                    onClick={onSubmit}
-                                    disabled={loading}
-                                >
-                                    {loading ? "Submitting order..." : `${side === "buy" ? "Buy" : "Sell"} ${baseAsset || "Asset"}`}
-                                </Button>
-                            </div>
-                        </section>
-
-                        <section className={`${panelClassName()} p-5`}>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Account Snapshot</p>
-                                    <h2 className="mt-2 text-xl font-semibold text-white">Balances</h2>
-                                </div>
-                                <Wallet className="size-5 text-slate-400" />
-                            </div>
-
-                            <div className="mt-5 space-y-3">
-                                <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
-                                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-500">
-                                        <span>{quoteAsset || "Quote"} wallet</span>
-                                        <span>Total {formatNumber(notionalBalance, 2)}</span>
-                                    </div>
-                                    <div className="mt-3 grid gap-2 text-sm text-slate-200">
-                                        <div className="flex items-center justify-between">
-                                            <span>Available</span>
-                                            <span>{formatNumber(quoteBalance.available, 2)}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <span>Locked</span>
-                                            <span>{formatNumber(quoteBalance.locked, 2)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
-                                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-500">
-                                        <span>{baseAsset || "Base"} wallet</span>
-                                        <span>Total {formatNumber(basePosition, 2)}</span>
-                                    </div>
-                                    <div className="mt-3 grid gap-2 text-sm text-slate-200">
-                                        <div className="flex items-center justify-between">
-                                            <span>Available</span>
-                                            <span>{formatNumber(baseBalance.available, 2)}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <span>Locked</span>
-                                            <span>{formatNumber(baseBalance.locked, 2)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="rounded-[22px] border border-sky-500/20 bg-sky-500/10 p-4">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm text-sky-100">Estimated portfolio value</span>
-                                        <span className="text-lg font-semibold text-white">
-                                            {formatNumber(portfolioEstimate, 2)} {quoteAsset}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </section>
-                    </div>
-
-                    <div className="grid gap-6">
-                        <section className={`${panelClassName()} p-5`}>
-                            <div className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
-                                <div>
-                                    <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Market Depth</p>
-                                    <h2 className="mt-2 text-xl font-semibold text-white">Order book</h2>
-                                </div>
-                                <div className="grid grid-cols-2 gap-3 text-sm text-slate-300 sm:min-w-[250px]">
-                                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Best bid</p>
-                                        <p className="mt-2 font-medium text-emerald-300">{formatNumber(bestBid, 2)}</p>
-                                    </div>
-                                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Best ask</p>
-                                        <p className="mt-2 font-medium text-rose-300">{formatNumber(bestAsk, 2)}</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                                <div className="rounded-[24px] border border-rose-500/15 bg-rose-500/[0.05]">
-                                    <div className="grid grid-cols-3 gap-3 border-b border-white/10 px-4 py-3 text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                                        <span>Price</span>
-                                        <span className="text-right">Qty</span>
-                                        <span className="text-right">Depth</span>
-                                    </div>
-                                    <div className="max-h-[360px] overflow-auto px-2 py-2">
-                                        {askLevels.length === 0 ? (
-                                            <div className="px-2 py-10 text-center text-sm text-slate-500">No asks yet</div>
-                                        ) : (
-                                            askLevels.map(([levelPrice, levelQty]: [string, string]) => {
-                                                const quantityValue = Number(levelQty);
-                                                const depthWidth = `${Math.max((quantityValue / depthMaxQuantity) * 100, 6)}%`;
-
-                                                return (
-                                                    <div key={`ask-${levelPrice}-${levelQty}`} className="relative grid grid-cols-3 items-center gap-3 overflow-hidden rounded-2xl px-2 py-2 text-sm">
-                                                        <div
-                                                            className="absolute inset-y-1 right-1 rounded-xl bg-rose-500/10"
-                                                            style={{ width: depthWidth }}
-                                                        />
-                                                        <span className="relative z-10 font-medium text-rose-300">{levelPrice}</span>
-                                                        <span className="relative z-10 text-right text-slate-200">{levelQty}</span>
-                                                        <span className="relative z-10 text-right text-slate-500">{formatNumber(quantityValue, 2)}</span>
-                                                    </div>
-                                                );
-                                            })
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="rounded-[24px] border border-emerald-500/15 bg-emerald-500/[0.05]">
-                                    <div className="grid grid-cols-3 gap-3 border-b border-white/10 px-4 py-3 text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                                        <span>Price</span>
-                                        <span className="text-right">Qty</span>
-                                        <span className="text-right">Depth</span>
-                                    </div>
-                                    <div className="max-h-[360px] overflow-auto px-2 py-2">
-                                        {bidLevels.length === 0 ? (
-                                            <div className="px-2 py-10 text-center text-sm text-slate-500">No bids yet</div>
-                                        ) : (
-                                            bidLevels.map(([levelPrice, levelQty]: [string, string]) => {
-                                                const quantityValue = Number(levelQty);
-                                                const depthWidth = `${Math.max((quantityValue / depthMaxQuantity) * 100, 6)}%`;
-
-                                                return (
-                                                    <div key={`bid-${levelPrice}-${levelQty}`} className="relative grid grid-cols-3 items-center gap-3 overflow-hidden rounded-2xl px-2 py-2 text-sm">
-                                                        <div
-                                                            className="absolute inset-y-1 right-1 rounded-xl bg-emerald-500/10"
-                                                            style={{ width: depthWidth }}
-                                                        />
-                                                        <span className="relative z-10 font-medium text-emerald-300">{levelPrice}</span>
-                                                        <span className="relative z-10 text-right text-slate-200">{levelQty}</span>
-                                                        <span className="relative z-10 text-right text-slate-500">{formatNumber(quantityValue, 2)}</span>
-                                                    </div>
-                                                );
-                                            })
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </section>
-
-                        <section className={`${panelClassName()} p-5`}>
-                            <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                                <div>
-                                    <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Orders</p>
-                                    <h2 className="mt-2 text-xl font-semibold text-white">Open positions</h2>
-                                </div>
-                                <ReceiptText className="size-5 text-slate-400" />
-                            </div>
-
-                            <div className="mt-4 space-y-3">
-                                {openOrders.length === 0 ? (
-                                    <div className="rounded-[24px] border border-dashed border-white/10 bg-white/[0.03] px-4 py-10 text-center text-sm text-slate-500">
-                                        No open orders for the selected trader.
-                                    </div>
-                                ) : (
-                                    openOrders.map((order) => {
-                                        const remaining = order.quantity - order.filled;
-
-                                        return (
-                                            <div
-                                                key={order.orderId}
-                                                className="flex flex-col gap-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-4 lg:flex-row lg:items-center lg:justify-between"
-                                            >
-                                                <div className="space-y-3">
-                                                    <div className="flex flex-wrap items-center gap-3">
-                                                        <span
-                                                            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${
-                                                                order.side === "buy"
-                                                                    ? "bg-emerald-500/15 text-emerald-300"
-                                                                    : "bg-rose-500/15 text-rose-300"
-                                                            }`}
-                                                        >
-                                                            {order.side}
-                                                        </span>
-                                                        <span className="text-sm text-slate-400">#{order.orderId}</span>
-                                                    </div>
-
-                                                    <div className="grid gap-2 text-sm text-slate-200 sm:grid-cols-4">
-                                                        <div>
-                                                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Price</p>
-                                                            <p className="mt-1">{formatNumber(order.price, 2)}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Qty</p>
-                                                            <p className="mt-1">{formatNumber(order.quantity, 2)}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Filled</p>
-                                                            <p className="mt-1">{formatNumber(order.filled, 2)}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Remaining</p>
-                                                            <p className="mt-1">{formatNumber(remaining, 2)}</p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <Button
-                                                    variant="destructive"
-                                                    className="h-11 rounded-2xl px-5"
-                                                    onClick={() => onCancel(order.orderId)}
-                                                    disabled={cancelingOrderId === order.orderId}
-                                                >
-                                                    {cancelingOrderId === order.orderId ? "Cancelling..." : "Cancel order"}
-                                                </Button>
-                                            </div>
-                                        );
-                                    })
-                                )}
-                            </div>
-                        </section>
-                    </div>
-
-                    <div className="flex flex-col gap-6">
-                        <section className={`${panelClassName()} p-5`}>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Tape</p>
-                                    <h2 className="mt-2 text-xl font-semibold text-white">Recent trades</h2>
-                                </div>
-                                <Layers3 className="size-5 text-slate-400" />
-                            </div>
-
-                            <div className="mt-4 grid grid-cols-3 gap-3 border-b border-white/10 pb-3 text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                                <span>Price</span>
-                                <span className="text-right">Quantity</span>
-                                <span className="text-right">Time</span>
-                            </div>
-
-                            <div className="mt-3 max-h-[460px] space-y-2 overflow-auto pr-1">
-                                {trades.length === 0 ? (
-                                    <div className="rounded-[24px] border border-dashed border-white/10 bg-white/[0.03] px-4 py-10 text-center text-sm text-slate-500">
-                                        No trades yet.
-                                    </div>
-                                ) : (
-                                    trades.map((trade) => {
-                                        const isBuyTrade = trade.buyerUserId === userId;
-
-                                        return (
-                                            <div
-                                                key={trade.tradeId}
-                                                className="grid grid-cols-3 items-center gap-3 rounded-[20px] border border-white/8 bg-white/[0.04] px-3 py-3 text-sm"
-                                            >
-                                                <span className={isBuyTrade ? "font-medium text-emerald-300" : "font-medium text-rose-300"}>
-                                                    {formatNumber(Number(trade.price), 2)}
-                                                </span>
-                                                <span className="text-right text-slate-200">{formatNumber(Number(trade.quantity), 2)}</span>
-                                                <span className="text-right text-slate-500">{formatTime(trade.timestamp)}</span>
-                                            </div>
-                                        );
-                                    })
-                                )}
-                            </div>
-                        </section>
-
-                        <section className={`${panelClassName()} p-5`}>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Session</p>
-                                    <h2 className="mt-2 text-xl font-semibold text-white">Market pulse</h2>
-                                </div>
-                                <Landmark className="size-5 text-slate-400" />
-                            </div>
-
-                            <div className="mt-5 grid gap-3">
-                                <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Opening price</p>
-                                    <p className="mt-2 text-lg font-semibold text-white">{ticker.firstPrice}</p>
-                                </div>
-                                <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Volume</p>
-                                    <p className="mt-2 text-lg font-semibold text-white">{ticker.volume}</p>
-                                </div>
-                                <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">P&L proxy</p>
-                                    <p className={`mt-2 text-lg font-semibold ${priceChange >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-                                        {formatSignedNumber(priceChange, 2)}
-                                    </p>
-                                </div>
-                            </div>
-                        </section>
-                    </div>
-                </section>
-
-                {isInitialLoading ? (
-                    <div className="pointer-events-none fixed inset-x-0 bottom-6 mx-auto w-fit rounded-full border border-white/10 bg-slate-950/85 px-4 py-2 text-sm text-slate-300 shadow-xl backdrop-blur">
-                        Loading market data...
-                    </div>
-                ) : null}
+          <div className="rounded border border-white/10 bg-[#0b111b]">
+            <div className="grid grid-cols-3 border-b border-white/10 px-3 py-2 text-[11px] text-slate-400">
+              <span>Price</span>
+              <span className="text-right">Size</span>
+              <span className="text-right">Total</span>
             </div>
-        </main>
-    );
+            <div className="h-[420px] overflow-auto p-2 text-xs">
+              {asks.map(([p, q]) => {
+                const qty = Number(q);
+                return (
+                  <div key={`ask-${p}-${q}`} className="relative mb-1 grid grid-cols-3 items-center rounded px-2 py-1">
+                    <div className="absolute inset-y-0 right-0 rounded bg-rose-500/10" style={{ width: `${Math.max((qty / maxDepthQty) * 100, 7)}%` }} />
+                    <span className="relative text-rose-300">{p}</span>
+                    <span className="relative text-right text-slate-300">{q}</span>
+                    <span className="relative text-right text-slate-400">{formatNumber(Number(p) * qty, 2)}</span>
+                  </div>
+                );
+              })}
+              <div className="my-2 border-y border-white/10 py-2 text-center text-sm font-semibold text-emerald-300">
+                {formatNumber(currentPrice, 2)}
+              </div>
+              {bids.map(([p, q]) => {
+                const qty = Number(q);
+                return (
+                  <div key={`bid-${p}-${q}`} className="relative mb-1 grid grid-cols-3 items-center rounded px-2 py-1">
+                    <div className="absolute inset-y-0 right-0 rounded bg-emerald-500/10" style={{ width: `${Math.max((qty / maxDepthQty) * 100, 7)}%` }} />
+                    <span className="relative text-emerald-300">{p}</span>
+                    <span className="relative text-right text-slate-300">{q}</span>
+                    <span className="relative text-right text-slate-400">{formatNumber(Number(p) * qty, 2)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded border border-white/10 bg-[#0b111b] p-3">
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              <button onClick={() => setSide("buy")} className={`rounded py-2 text-sm font-medium ${side === "buy" ? "bg-emerald-500 text-slate-950" : "bg-white/5 text-slate-300"}`}>Buy</button>
+              <button onClick={() => setSide("sell")} className={`rounded py-2 text-sm font-medium ${side === "sell" ? "bg-rose-500 text-white" : "bg-white/5 text-slate-300"}`}>Sell</button>
+            </div>
+            <div className="mb-3 flex gap-2 text-sm">
+              <button onClick={() => setOrderType("limit")} className={`rounded px-3 py-1 ${orderType === "limit" ? "bg-white/15 text-white" : "text-slate-400"}`}>Limit</button>
+              <button onClick={() => setOrderType("market")} className={`rounded px-3 py-1 ${orderType === "market" ? "bg-white/15 text-white" : "text-slate-400"}`}>Market</button>
+            </div>
+            <label className="mb-3 block text-xs text-slate-400">Available Balance {formatNumber(quoteBalance.available, 2)} {quoteAsset}</label>
+            <div className="space-y-3">
+              <label className="block">
+                <span className="mb-1 block text-xs text-slate-400">Price</span>
+                <Input
+                  type="number"
+                  disabled={orderType === "market"}
+                  value={orderType === "market" ? formatNumber(calculatedPrice, 2) : price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  className="h-10 border-white/10 bg-white/5 text-white disabled:opacity-70"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs text-slate-400">Quantity</span>
+                <Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="h-10 border-white/10 bg-white/5 text-white" />
+              </label>
+              <p className="text-xs text-slate-400">Estimated: {formatNumber(estimatedValue, 2)} {quoteAsset}</p>
+              <div className="grid grid-cols-4 gap-2 text-xs">
+                {[25, 50, 75, 100].map((percent) => (
+                  <button
+                    key={percent}
+                    type="button"
+                    onClick={() => {
+                      const maxQty = side === "buy"
+                        ? (calculatedPrice > 0 ? quoteBalance.available / calculatedPrice : 0)
+                        : baseBalance.available;
+                      setQuantity((maxQty * percent / 100).toFixed(4));
+                    }}
+                    className="rounded border border-white/10 py-1 text-slate-300 hover:bg-white/10"
+                  >
+                    {percent}%
+                  </button>
+                ))}
+              </div>
+              <Button
+                className={`h-11 w-full ${side === "buy" ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-rose-500 text-white hover:bg-rose-400"}`}
+                onClick={onPlaceOrder}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Placing..." : side === "buy" ? "Buy" : "Sell"}
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-3 rounded border border-white/10 bg-[#0b111b] p-2">
+          <h3 className="mb-2 px-2 text-sm font-semibold text-slate-200">Markets & Trades</h3>
+          <div className="grid gap-2 md:grid-cols-2">
+            <div className="rounded border border-white/10 p-2">
+              <p className="mb-2 text-xs text-slate-400">Markets</p>
+              <div className="max-h-40 space-y-1 overflow-auto text-xs">
+                {allTickers.map((entry) => (
+                  <Link key={entry.symbol} href={`/trade/${entry.symbol}`} className="grid grid-cols-3 rounded px-2 py-1 hover:bg-white/5">
+                    <span className="text-slate-200">{entry.symbol.replace("_", "/")}</span>
+                    <span className="text-right text-slate-300">{entry.lastPrice}</span>
+                    <span className={`text-right ${Number(entry.priceChangePercent) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                      {formatPct(Number(entry.priceChangePercent))}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <div className="rounded border border-white/10 p-2">
+              <p className="mb-2 text-xs text-slate-400">Trades</p>
+              <div className="max-h-40 space-y-1 overflow-auto text-xs">
+                {trades.slice(0, 25).map((trade) => (
+                  <div key={trade.tradeId} className="grid grid-cols-3 rounded px-2 py-1 hover:bg-white/5">
+                    <span className={trade.buyerUserId === userId ? "text-emerald-300" : "text-rose-300"}>{formatNumber(Number(trade.price), 2)}</span>
+                    <span className="text-right text-slate-300">{formatNumber(Number(trade.quantity), 4)}</span>
+                    <span className="text-right text-slate-500">{new Date(trade.timestamp).toLocaleTimeString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
 }

@@ -9,7 +9,8 @@ const REDIS_CHANNELS = {
 };
 
 // Create Redis client inline
-const subscriber = new Redis(env.REDIS_URL || "redis://localhost:6379");
+const redisUrl = env.REDIS_URL || "redis://localhost:6379";
+const subscriber = new Redis(redisUrl);
 
 async function start() {
     await subscriber.subscribe(REDIS_CHANNELS.EVENTS);

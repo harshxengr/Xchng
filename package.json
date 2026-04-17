@@ -3,20 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "dotenv -- turbo run dev",
     "dev:infra": "docker-compose up -d",
-    "dev:db": "pnpm --filter @workspace/database db:push && pnpm --filter @workspace/database db:generate && pnpm --filter @workspace/database build",
+    "dev:db": "dotenv -- turbo run db:push db:generate",
     "dev:start": "pnpm dev:infra && pnpm dev:db",
     "dev:stop": "docker-compose down && pkill -f 'tsx watch' && pkill -f 'next dev'",
-    "build": "turbo run build",
+    "build": "dotenv -- turbo run build",
     "lint": "turbo run lint",
     "check-types": "turbo run check-types"
   },
   "devDependencies": {
-    "@types/pg": "^8.16.0",
-    "axios": "^1.15.0",
-    "pg": "^8.18.0",
+    "dotenv-cli": "^11.0.0",
     "turbo": "^2.4.4"
   },
-  "packageManager": "pnpm@10.25.0"
+  "packageManager": "pnpm@10.33.0"
 }
