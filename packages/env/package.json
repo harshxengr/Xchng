@@ -1,23 +1,16 @@
 {
   "name": "@workspace/env",
   "version": "1.0.0",
-  "type": "module",
+  "private": true,
   "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
-    },
-    "./server": {
-      "types": "./src/server.ts",
-      "default": "./src/server.ts"
-    }
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@workspace/types": "workspace:*",
-    "dotenv": "^17.3.1"
+    "@workspace/types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.2.2",

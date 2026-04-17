@@ -1,25 +1,19 @@
 {
   "name": "@workspace/auth",
   "version": "1.0.0",
-  "type": "module",
+  "private": true,
   "exports": {
-    ".": {
-      "types": "./src/auth.ts",
-      "default": "./src/auth.ts"
-    },
-    "./client": {
-      "types": "./src/auth-client.ts",
-      "default": "./src/auth-client.ts"
-    }
+    ".": "./src/index.ts",
+    "./client": "./src/auth-client.ts",
+    "./server": "./src/auth.ts"
   },
   "scripts": {
-    "build": "tsc",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@workspace/database": "workspace:*",
     "@workspace/env": "workspace:*",
-    "better-auth": "^1.4.18"
+    "better-auth": "^1.6.5"
   },
   "devDependencies": {
     "@workspace/typescript-config": "workspace:*",

@@ -25,7 +25,7 @@ export function CandleChart({
 }) {
   if (candles.length === 0) {
     return (
-      <div className="flex h-[320px] items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.03] text-sm text-slate-500">
+      <div className="flex h-[320px] items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/3 text-sm text-slate-500">
         No candle data yet.
       </div>
     );
@@ -42,7 +42,7 @@ export function CandleChart({
   const chartHeight = height - topPadding - bottomPadding - volumeHeight - 14;
   const candleWidth = width / candles.length;
   const bodyWidth = Math.max(Math.min(candleWidth * 0.58, 18), 6);
-  const maxVolume = Math.max(...candles.map((candle) => Number(candle.baseVolume)), 1);
+  const maxVolume = Math.max(...candles.map((candle) => Number(candle.volume)), 1);
 
   const toY = (price: number) => {
     const normalized = (price - minPrice) / priceRange;
@@ -97,7 +97,7 @@ export function CandleChart({
           const close = Number(candle.close);
           const high = Number(candle.high);
           const low = Number(candle.low);
-          const volume = Number(candle.baseVolume);
+          const volume = Number(candle.volume);
 
           const x = index * candleWidth + candleWidth / 2;
           const openY = toY(open);
@@ -112,7 +112,7 @@ export function CandleChart({
           const volumeY = height - bottomPadding - volumeBarHeight;
 
           return (
-            <g key={`${candle.bucketStart}-${index}`}>
+            <g key={`${candle.openTime}-${index}`}>
               <line x1={x} x2={x} y1={highY} y2={lowY} stroke={tone} strokeWidth="1.5" />
               <rect
                 x={x - bodyWidth / 2}
@@ -137,19 +137,19 @@ export function CandleChart({
         })}
 
         {xLabels.map((candle) => {
-          const index = candles.findIndex((entry) => entry.bucketStart === candle.bucketStart);
+          const index = candles.findIndex((entry) => entry.openTime === candle.openTime);
           const x = index * candleWidth + candleWidth / 2;
 
           return (
             <text
-              key={candle.bucketStart}
+              key={candle.openTime}
               x={x}
               y={height - 8}
               textAnchor="middle"
               fontSize="12"
               fill="rgba(148,163,184,0.72)"
             >
-              {formatTime(candle.bucketStart)}
+              {formatTime(candle.openTime)}
             </text>
           );
         })}

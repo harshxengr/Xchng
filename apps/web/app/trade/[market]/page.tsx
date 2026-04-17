@@ -1,4 +1,5 @@
 import { TradeScreen } from "@/components/TradeScreen";
+import { getSession } from "@/lib/auth-session";
 
 export default async function TradePage({
   params,
@@ -6,6 +7,19 @@ export default async function TradePage({
   params: Promise<{ market: string }>;
 }) {
   const { market } = await params;
+  const session = await getSession();
 
-  return <TradeScreen market={market} />;
+  return (
+    <TradeScreen
+      market={market}
+      sessionUser={
+        session
+          ? {
+              name: session.user.name ?? null,
+              email: session.user.email ?? null
+            }
+          : null
+      }
+    />
+  );
 }

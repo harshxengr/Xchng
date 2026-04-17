@@ -1,9 +1,10 @@
-import { envSchema } from "@workspace/types";
-import "./index.js";
+import { serverEnvSchema, ServerEnv} from "@workspace/types";
 
-/**
- * Server-side environment utility.
- * We've removed manual .env file loading to prevent browser build errors in monorepos.
- * Ensure your process has the environment variables loaded (e.g. via turbo, docker, or shell).
- */
-export const env = envSchema.parse(process.env);
+const parsed = serverEnvSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  console.error("Invalid environment variables:", parsed.error.format());
+  throw new Error("Invalid environment variables");
+}
+
+export const env = parsed.data as ServerEnv;
