@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { prisma } from "@workspace/database";
+import * as database from "@workspace/database";
 import type {
   Order,
   Side,
@@ -12,6 +12,8 @@ import type {
   UserBalance
 } from "@workspace/types";
 import { Orderbook } from "./Orderbook.js";
+
+const prisma = database.prisma ?? database.default?.prisma;
 
 /**
  * A simplified matching engine that maintains orderbooks in memory.
@@ -281,4 +283,3 @@ export class Engine {
     return this.balances.get(userId)!;
   }
 }
-

@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "dotenv -- turbo run dev",
-    "dev:infra": "docker-compose up -d",
+    "dev:infra": "docker compose up -d",
     "dev:db": "dotenv -- turbo run db:push db:generate",
     "dev:start": "pnpm dev:infra && pnpm dev:db",
-    "dev:stop": "docker-compose down && pkill -f 'tsx watch' && pkill -f 'next dev'",
+    "dev:stop": "docker compose down; pkill -f '[t]sx watch' || true; pkill -f '[n]ext dev' || true",
     "build": "dotenv -- turbo run build",
     "lint": "turbo run lint",
     "check-types": "turbo run check-types"

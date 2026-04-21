@@ -6,7 +6,7 @@ services:
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -24,7 +24,7 @@ services:
     volumes:
       - xchng-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d xchng"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d xchng" ]
       interval: 5s
       timeout: 5s
       retries: 10

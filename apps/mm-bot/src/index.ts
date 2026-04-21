@@ -1,5 +1,7 @@
 import { Redis } from "ioredis";
-import { env } from "@workspace/env";
+import * as envPackage from "@workspace/env";
+
+const env = envPackage.env ?? envPackage.default?.env;
 
 // --- CONFIGURATION (Direct from process.env) ---
 const API_URL = env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
@@ -12,6 +14,8 @@ const MM_REDIS_KEYS = {
 
 // Create Redis client inline
 const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+const seededInventory = new Set<string>();
+const activeOrderIds = new Map<string, Set<string>>();
 
 type MarketStats = {
     loopCount: number;
@@ -112,6 +116,7 @@ async function publishStatus(market: string, price: number, paused: boolean) {
 async function runMarketLoop(market: string) {
     const userId = `mm-${market.toLowerCase()}`;
     console.log(`[MM-BOT] Starting loop for ${market} as ${userId}`);
+    await waitForApi(market);
 
     while (true) {
         const startedAt = Date.now();
@@ -131,32 +136,35 @@ async function runMarketLoop(market: string) {
                 stats.lastRefreshAt = Date.now();
                 stats.lastLoopDurationMs = Date.now() - startedAt;
                 await publishStatus(market, price, true);
-                await new Promise(r => setTimeout(r, LOOP_INTERVAL));
+                await sleep(LOOP_INTERVAL);
                 continue;
             }
 
-            // 2. Get our existing orders
-            const ordersRes = await fetch(`${API_URL}/order/open?market=${market}&userId=${userId}`);
-            const existingOrders = await ordersRes.json();
+            await ensureInventory(market, userId, price);
 
-            // 3. Cancel all our old orders to keep it simple (junior style)
+            // 2. Cancel orders this process placed in the running engine.
             // A more advanced dev would only cancel if price moved, but this is fine for a demo.
-            if (Array.isArray(existingOrders)) {
-                for (const order of existingOrders) {
-                    await fetch(`${API_URL}/order`, {
-                        method: "DELETE",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ market, orderId: order.orderId, userId })
-                    });
+            const currentOrders = getActiveOrders(market);
+            for (const orderId of Array.from(currentOrders)) {
+                const response = await fetch(`${API_URL}/order`, {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ market, orderId, userId })
+                });
+
+                currentOrders.delete(orderId);
+                if (response.ok) {
                     stats.lastCycleCancelled += 1;
                     stats.totalQuotesCancelled += 1;
                 }
             }
 
-            // 4. Place a new ladder (1 buy, 1 sell for simplicity)
+            // 3. Place a new ladder (1 buy, 1 sell for simplicity)
             const spread = 0.01; // 1%
-            await placeOrder(market, userId, "buy", price * (1 - spread), 1);
-            await placeOrder(market, userId, "sell", price * (1 + spread), 1);
+            const bidOrderId = await placeOrder(market, userId, "buy", price * (1 - spread), 1);
+            const askOrderId = await placeOrder(market, userId, "sell", price * (1 + spread), 1);
+            currentOrders.add(bidOrderId);
+            currentOrders.add(askOrderId);
             stats.lastCyclePlaced += 2;
             stats.totalQuotesPlaced += 2;
             stats.successCount += 1;
@@ -178,16 +186,85 @@ async function runMarketLoop(market: string) {
             console.error(`[MM-BOT] ${market} loop error:`, e);
         }
 
-        await new Promise(r => setTimeout(r, LOOP_INTERVAL));
+        await sleep(LOOP_INTERVAL);
     }
 }
 
+async function waitForApi(market: string) {
+    while (true) {
+        try {
+            const response = await fetch(`${API_URL}/ticker?symbol=${market}`);
+            if (response.ok) {
+                return;
+            }
+        } catch {
+            // Services start in parallel; keep this quiet until the API is ready.
+        }
+
+        await sleep(1000);
+    }
+}
+
+function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getActiveOrders(market: string) {
+    const existing = activeOrderIds.get(market);
+    if (existing) {
+        return existing;
+    }
+
+    const created = new Set<string>();
+    activeOrderIds.set(market, created);
+    return created;
+}
+
 async function placeOrder(market: string, userId: string, side: string, price: number, quantity: number) {
-    await fetch(`${API_URL}/order`, {
+    const response = await fetch(`${API_URL}/order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ market, userId, side, price, quantity })
     });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+        throw new Error(body?.error || `Order request failed with ${response.status}`);
+    }
+
+    if (!body?.orderId) {
+        throw new Error("Order response missing orderId");
+    }
+
+    return body.orderId as string;
+}
+
+async function ensureInventory(market: string, userId: string, referencePrice: number) {
+    if (seededInventory.has(market)) {
+        return;
+    }
+
+    const [base, quote] = market.split("_");
+    if (!base || !quote) {
+        throw new Error(`Invalid market: ${market}`);
+    }
+
+    await deposit(userId, base, 1000);
+    await deposit(userId, quote, Math.ceil(referencePrice * 1000));
+    seededInventory.add(market);
+}
+
+async function deposit(userId: string, asset: string, amount: number) {
+    const response = await fetch(`${API_URL}/deposit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, asset, amount })
+    });
+
+    if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || `Deposit request failed with ${response.status}`);
+    }
 }
 
 function start() {

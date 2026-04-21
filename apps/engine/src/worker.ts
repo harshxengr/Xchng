@@ -1,12 +1,15 @@
 import { Redis } from "ioredis";
-import { prisma } from "@workspace/database";
+import * as database from "@workspace/database";
 import type { 
   EngineCommand, 
   EngineCommandResult, 
   EngineEvent,
 } from "@workspace/types";
-import { env } from "@workspace/env/server";
+import * as serverEnv from "@workspace/env/server";
 import { Engine } from "./trade/Engine.js";
+
+const prisma = database.prisma ?? database.default?.prisma;
+const env = serverEnv.env ?? serverEnv.default?.env;
 
 // Redis channels - inline as per junior dev style
 const REDIS_CHANNELS = {

@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 export const clientEnvSchema = z.object({
-    NEXT_PUBLIC_APP_URL: z.string().url(),
-    NEXT_PUBLIC_API_URL: z.string().url(),
-    NEXT_PUBLIC_WS_URL: z.string().url(),
+    NEXT_PUBLIC_APP_URL: z.string(),
+    NEXT_PUBLIC_API_URL: z.string(),
+    NEXT_PUBLIC_WS_URL: z.string(),
 });
 
 export const serverEnvSchema = z.object({
@@ -13,13 +13,13 @@ export const serverEnvSchema = z.object({
 
     // Auth
     BETTER_AUTH_SECRET: z.string().min(1),
-    BETTER_AUTH_URL: z.string().url(),
+    BETTER_AUTH_URL: z.string(),
 
     // App
     NODE_ENV: z.enum(["development", "staging", "production", "test"]).default("development"),
-    NEXT_PUBLIC_APP_URL: z.string().url(),
-    NEXT_PUBLIC_API_URL: z.string().url(),
-    NEXT_PUBLIC_WS_URL: z.string().url(),
+    NEXT_PUBLIC_APP_URL: z.string(),
+    NEXT_PUBLIC_API_URL: z.string(),
+    NEXT_PUBLIC_WS_URL: z.string(),
 
     // Ports
     PORT: z.coerce.number().int().positive().default(4000),

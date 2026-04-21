@@ -402,7 +402,7 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
               <div className="max-h-40 space-y-1 overflow-auto text-xs">
                 {allTickers.map((entry) => (
                   <Link key={entry.symbol} href={`/trade/${entry.symbol}`} className="grid grid-cols-3 rounded px-2 py-1 hover:bg-white/5">
-                    <span className="text-slate-200">{entry.symbol.replace("_", "/")}</span>
+                    {/* <span className="text-slate-200">{entry.symbol.replace("_", "/")}</span> */}
                     <span className="text-right text-slate-300">{entry.lastPrice}</span>
                     <span className={`text-right ${Number(entry.priceChangePercent) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                       {formatPct(Number(entry.priceChangePercent))}

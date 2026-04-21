@@ -1,4 +1,5 @@
-import { serverEnvSchema, ServerEnv} from "@workspace/types";
+import { serverEnvSchema } from "@workspace/types";
+import type { ServerEnv } from "@workspace/types";
 
 const parsed = serverEnvSchema.safeParse(process.env);
 
