@@ -2,9 +2,12 @@ import express from "express";
 import cors from "cors";
 import crypto from "node:crypto";
 import { Redis } from "ioredis";
-import { prisma } from "@workspace/database";
-import { env } from "@workspace/env/server";
+import * as database from "@workspace/database";
+import * as serverEnv from "@workspace/env/server";
 import type { EngineCommandResult } from "@workspace/types";
+
+const prisma = database.prisma ?? database.default?.prisma;
+const env = serverEnv.env ?? serverEnv.default?.env;
 
 const app = express();
 const port = env.PORT || 4000;

@@ -1,4 +1,5 @@
-import { clientEnvSchema, ClientEnv } from "@workspace/types";
+import { clientEnvSchema } from "@workspace/types";
+import type { ClientEnv } from "@workspace/types";
 
 const parsed = clientEnvSchema.partial().safeParse(process.env);
 

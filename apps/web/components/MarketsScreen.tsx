@@ -85,7 +85,7 @@ export function MarketsScreen() {
               <Link key={ticker.symbol} href={`/trade/${ticker.symbol}`} className="exchange-card-soft rounded-2xl p-4 transition hover:bg-white/[0.06]">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-lg font-semibold text-white">{ticker.symbol.replace("_", " / ")}</p>
+                    {/* <p className="text-lg font-semibold text-white">{ticker.symbol.replace("_", " / ")}</p> */}
                     <p className="mt-1 text-xs text-slate-500">{ticker.trades} trades</p>
                   </div>
                   <Star className="size-4 text-[var(--exchange-yellow)]" />
@@ -171,7 +171,7 @@ export function MarketsScreen() {
                 return (
                   <div key={ticker.symbol} className="grid grid-cols-[1.3fr_repeat(5,minmax(0,1fr))_110px] items-center gap-3 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/[0.035]">
                     <div>
-                      <p className="font-semibold text-white">{ticker.symbol.replace("_", " / ")}</p>
+                      {/* <p className="font-semibold text-white">{ticker.symbol.replace("_", " / ")}</p> */}
                       <p className="mt-1 text-xs text-slate-500">{ticker.trades} trades</p>
                     </div>
                     <span className="text-right font-medium tabular-nums">{formatNumber(Number(ticker.lastPrice), 2)}</span>
