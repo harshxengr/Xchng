@@ -30,14 +30,14 @@ export async function requireSession(): Promise<Session> {
 }
 
 /**
- * Get session and redirect to /dashboard if already authenticated.
+ * Get session and redirect to /markets if already authenticated.
  * Use this in sign-in / sign-up pages so logged-in users can't see them.
  */
 export async function requireGuest(): Promise<void> {
   const session = await getSession();
 
   if (session) {
-    redirect("/dashboard");
+    redirect("/markets");
   }
 }
 const OPERATOR_EMAILS = (process.env.OPERATOR_EMAILS || "admin@example.com").split(",");
@@ -50,7 +50,7 @@ export function isOperatorSession(session: Session | null): boolean {
 export async function requireOperatorSession(): Promise<Session> {
   const session = await requireSession();
   if (!isOperatorSession(session)) {
-    redirect("/dashboard");
+    redirect("/markets");
   }
   return session;
 }

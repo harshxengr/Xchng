@@ -8,6 +8,16 @@ import { Input } from "@workspace/ui/components/input";
 import { ExchangeCard, ExchangePage, SectionTitle, StatTile, StatusPill } from "@/components/exchange-ui";
 import { getTickers, type Ticker } from "@/app/lib/api";
 
+function uniqueTickersBySymbol(tickers: Ticker[]) {
+  const seen = new Set<string>();
+  return tickers.filter((ticker) => {
+    const symbol = ticker.symbol?.trim();
+    if (!symbol || seen.has(symbol)) return false;
+    seen.add(symbol);
+    return true;
+  });
+}
+
 function formatNumber(value: number, digits = 2) {
   return new Intl.NumberFormat("en-IN", {
     minimumFractionDigits: 0,
@@ -20,12 +30,42 @@ export function MarketsScreen() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [favoritesLoaded, setFavoritesLoaded] = useState(false);
+
+  // Load favorites on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("favorites");
+    if (saved) {
+      try {
+        setFavorites(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse favorites", e);
+      }
+    }
+    setFavoritesLoaded(true);
+  }, []);
+
+  // Save favorites when changed
+  useEffect(() => {
+    if (favoritesLoaded) {
+      localStorage.setItem("favorites", JSON.stringify(favorites));
+    }
+  }, [favorites, favoritesLoaded]);
+
+  const toggleFavorite = (e: React.MouseEvent, symbol: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setFavorites(prev => 
+      prev.includes(symbol) ? prev.filter(s => s !== symbol) : [...prev, symbol]
+    );
+  };
 
   async function loadTickers() {
     try {
       setLoading(true);
       setMessage("");
-      setTickers(await getTickers());
+      setTickers(uniqueTickersBySymbol(await getTickers()));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to load markets");
     } finally {
@@ -41,7 +81,7 @@ export function MarketsScreen() {
     const normalized = query.trim().toLowerCase();
     return [...tickers]
       .sort((left, right) => Number(right.trades || 0) - Number(left.trades || 0))
-      .filter((ticker) => !normalized || ticker.symbol.toLowerCase().includes(normalized));
+      .filter((ticker) => !normalized || ticker.symbol?.toLowerCase().includes(normalized));
   }, [query, tickers]);
 
   const summary = useMemo(() => {
@@ -56,7 +96,13 @@ export function MarketsScreen() {
     };
   }, [tickers]);
 
-  const featured = filteredTickers.slice(0, 3);
+  const featured = useMemo(() => {
+    return tickers.filter(t => favorites.includes(t.symbol));
+  }, [tickers, favorites]);
+
+  const tableTickers = useMemo(() => {
+    return filteredTickers.filter(t => !favorites.includes(t.symbol));
+  }, [filteredTickers, favorites]);
 
   return (
     <ExchangePage>
@@ -78,32 +124,56 @@ export function MarketsScreen() {
           </div>
         </div>
 
-        <div className="grid gap-3 p-4 lg:grid-cols-3">
-          {featured.map((ticker) => {
-            const changePercent = Number(ticker.priceChangePercent || 0);
-            return (
-              <Link key={ticker.symbol} href={`/trade/${ticker.symbol}`} className="exchange-card-soft rounded-2xl p-4 transition hover:bg-white/[0.06]">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    {/* <p className="text-lg font-semibold text-white">{ticker.symbol.replace("_", " / ")}</p> */}
-                    <p className="mt-1 text-xs text-slate-500">{ticker.trades} trades</p>
-                  </div>
-                  <Star className="size-4 text-[var(--exchange-yellow)]" />
-                </div>
-                <div className="mt-5 flex items-end justify-between gap-3">
-                  <div>
-                    <p className="text-xs text-slate-500">Last price</p>
-                    <p className="mt-1 text-2xl font-semibold text-white tabular-nums">{formatNumber(Number(ticker.lastPrice), 2)}</p>
-                  </div>
-                  <p className={`text-sm font-semibold tabular-nums ${changePercent >= 0 ? "text-[var(--exchange-green)]" : "text-[var(--exchange-red)]"}`}>
-                    {changePercent >= 0 ? "+" : ""}
-                    {formatNumber(changePercent, 2)}%
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+        {loading && tickers.length === 0 ? (
+          <div className="flex h-64 items-center justify-center border-b border-white/10 bg-white/[0.02]">
+            <div className="flex flex-col items-center gap-3">
+              <RefreshCcw className="size-8 animate-spin text-emerald-500" />
+              <p className="text-sm text-slate-500">Loading markets...</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {featured.length > 0 ? (
+              <div className="grid gap-3 p-4 lg:grid-cols-3">
+                {featured.map((ticker, index) => {
+                  const changePercent = Number(ticker.priceChangePercent || 0);
+                  return (
+                    <Link key={ticker.symbol || index} href={`/trade/${ticker.symbol}`} className="exchange-card-soft rounded-2xl p-4 transition hover:bg-white/[0.06]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-lg font-semibold text-white">{ticker.symbol?.replace("_", " / ")}</p>
+                          <p className="mt-1 text-xs text-slate-500">{ticker.trades} trades</p>
+                        </div>
+                        <button 
+                          onClick={(e) => toggleFavorite(e, ticker.symbol)}
+                          className="group/star rounded-full p-1.5 transition hover:bg-white/10"
+                        >
+                          <Star 
+                            className={`size-4 transition-all ${favorites.includes(ticker.symbol) ? "fill-yellow-400 text-yellow-400 scale-110" : "text-slate-500 group-hover/star:text-yellow-400"}`} 
+                          />
+                        </button>
+                      </div>
+                      <div className="mt-5 flex items-end justify-between gap-3">
+                        <div>
+                          <p className="text-xs text-slate-500">Last price</p>
+                          <p className="mt-1 text-2xl font-semibold text-white tabular-nums">{formatNumber(Number(ticker.lastPrice), 2)}</p>
+                        </div>
+                        <p className={`text-sm font-semibold tabular-nums ${changePercent >= 0 ? "text-[var(--exchange-green)]" : "text-[var(--exchange-red)]"}`}>
+                          {changePercent >= 0 ? "+" : ""}
+                          {formatNumber(changePercent, 2)}%
+                        </p>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="px-5 py-8 text-center">
+                <p className="text-sm text-slate-500">Star markets to see them here in your watchlist.</p>
+              </div>
+            )}
+          </>
+        )}
       </ExchangeCard>
 
       {message ? (
@@ -166,13 +236,23 @@ export function MarketsScreen() {
             </div>
 
             <div className="divide-y divide-white/10">
-              {filteredTickers.map((ticker) => {
+              {filteredTickers.map((ticker, index) => {
                 const changePercent = Number(ticker.priceChangePercent || 0);
                 return (
-                  <div key={ticker.symbol} className="grid grid-cols-[1.3fr_repeat(5,minmax(0,1fr))_110px] items-center gap-3 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/[0.035]">
-                    <div>
-                      {/* <p className="font-semibold text-white">{ticker.symbol.replace("_", " / ")}</p> */}
-                      <p className="mt-1 text-xs text-slate-500">{ticker.trades} trades</p>
+                  <div key={ticker.symbol || index} className="grid grid-cols-[1.3fr_repeat(5,minmax(0,1fr))_110px] items-center gap-3 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/[0.035]">
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={(e) => toggleFavorite(e, ticker.symbol)}
+                        className="group/star rounded-full p-1 transition hover:bg-white/10"
+                      >
+                        <Star 
+                          className={`size-3.5 transition-all ${favorites.includes(ticker.symbol) ? "fill-yellow-400 text-yellow-400 scale-110" : "text-slate-600 group-hover/star:text-yellow-400"}`} 
+                        />
+                      </button>
+                      <div>
+                        <p className="font-semibold text-white">{ticker.symbol?.replace("_", " / ")}</p>
+                        <p className="mt-0.5 text-[10px] text-slate-500">{ticker.trades} trades</p>
+                      </div>
                     </div>
                     <span className="text-right font-medium tabular-nums">{formatNumber(Number(ticker.lastPrice), 2)}</span>
                     <span className={`text-right font-semibold tabular-nums ${changePercent >= 0 ? "text-[var(--exchange-green)]" : "text-[var(--exchange-red)]"}`}>
@@ -198,15 +278,25 @@ export function MarketsScreen() {
         </div>
 
         <div className="grid gap-3 p-3 lg:hidden">
-          {filteredTickers.map((ticker) => {
+          {filteredTickers.map((ticker, index) => {
             const changePercent = Number(ticker.priceChangePercent || 0);
             return (
               <Link key={ticker.symbol} href={`/trade/${ticker.symbol}`} className="exchange-card-soft rounded-2xl p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold text-white">{ticker.symbol.replace("_", " / ")}</p>
-                    <p className="mt-1 text-xs text-slate-500">{ticker.trades} trades · Vol {formatNumber(Number(ticker.volume), 2)}</p>
-                  </div>
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={(e) => toggleFavorite(e, ticker.symbol)}
+                        className="group/star rounded-full p-1 transition hover:bg-white/10"
+                      >
+                        <Star 
+                          className={`size-4 transition-all ${favorites.includes(ticker.symbol) ? "fill-yellow-400 text-yellow-400 scale-110" : "text-slate-600 group-hover/star:text-yellow-400"}`} 
+                        />
+                      </button>
+                      <div>
+                        <p className="text-lg font-semibold text-white">{ticker.symbol?.replace("_", " / ")}</p>
+                        <p className="mt-1 text-xs text-slate-500">{ticker.trades} trades · Vol {formatNumber(Number(ticker.volume), 2)}</p>
+                      </div>
+                    </div>
                   <p className={`text-sm font-semibold ${changePercent >= 0 ? "text-[var(--exchange-green)]" : "text-[var(--exchange-red)]"}`}>
                     {changePercent >= 0 ? "+" : ""}
                     {formatNumber(changePercent, 2)}%

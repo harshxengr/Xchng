@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 function getCallbackUrl(request: NextRequest) {
   const callbackUrl = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-  return callbackUrl === "/" ? "/dashboard" : callbackUrl;
+  return callbackUrl === "/" ? "/markets" : callbackUrl;
 }
 
 export function proxy(request: NextRequest) {
@@ -20,5 +20,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/markets/:path*", "/ops/:path*", "/settings/:path*", "/profile/:path*", "/trade/:path*"],
+  matcher: ["/markets/:path*", "/ops/:path*", "/settings/:path*", "/profile/:path*", "/trade/:path*"],
 };

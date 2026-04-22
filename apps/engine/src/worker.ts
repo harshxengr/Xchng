@@ -29,9 +29,8 @@ const engine = new Engine();
 
 async function start() {
     console.log("Engine simplified worker starting...");
-
-    // Optional: Restore state from DB here if needed. 
-    // For now, we'll keep it simple as per the "junior" style.
+    await engine.init();
+    console.log("Engine state initialized from DB.");
     
     while (true) {
         // BLPOP is like an async while-loop for Redis lists

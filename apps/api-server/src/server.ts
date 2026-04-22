@@ -193,7 +193,14 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 // Orders
 app.post("/api/v1/order", async (req, res) => {
     try {
-        const result = await sendCommandToEngine("PLACE_ORDER", req.body);
+        const { market, userId, side, price, quantity } = req.body;
+        const result = await sendCommandToEngine("PLACE_ORDER", {
+            market,
+            userId,
+            side,
+            price: Number(price),
+            quantity: Number(quantity)
+        });
         res.json(result);
     } catch (e: any) {
         res.status(400).json({ success: false, error: e.message });
@@ -281,7 +288,7 @@ app.get("/api/v1/ticker", async (req, res) => {
             orderBy: { timestamp: "desc" },
             take: 1
         });
-        res.json(tickers[0] || { symbol, lastPrice: "0" });
+        res.json(tickers[0] ? { ...tickers[0], symbol: tickers[0].market } : { symbol, lastPrice: "0" });
     } catch (e: any) {
         res.status(400).json({ success: false, error: e.message });
     }
@@ -293,7 +300,7 @@ app.get("/api/v1/tickers", async (req, res) => {
             SELECT DISTINCT ON ("market") * FROM "TickerSnapshot"
             ORDER BY "market", "timestamp" DESC
         ` as any[];
-        res.json(tickers);
+        res.json(tickers.map(t => ({ ...t, symbol: t.market })));
     } catch (e: any) {
         res.status(400).json({ success: false, error: e.message });
     }
@@ -334,7 +341,12 @@ app.get("/api/v1/balances", async (req, res) => {
 
 app.post("/api/v1/deposit", async (req, res) => {
     try {
-        const result = await sendCommandToEngine("DEPOSIT", req.body);
+        const { userId, asset, amount } = req.body;
+        const result = await sendCommandToEngine("DEPOSIT", {
+            userId,
+            asset,
+            amount: Number(amount)
+        });
         res.json(result);
     } catch (e: any) {
         res.status(400).json({ success: false, error: e.message });

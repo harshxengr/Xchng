@@ -42,12 +42,6 @@ export function ProtectedShellNav({ user, canManageMmBot }: ProtectedShellNavPro
 
   const links = [
     {
-      href: "/dashboard",
-      label: "Overview",
-      icon: LayoutGrid,
-      active: pathname === "/dashboard"
-    },
-    {
       href: "/markets",
       label: "Markets",
       icon: Search,
@@ -74,7 +68,7 @@ export function ProtectedShellNav({ user, canManageMmBot }: ProtectedShellNavPro
     <header className="sticky top-0 z-40 border-b border-white/10 bg-[#070b12]/92 backdrop-blur-xl">
       <div className="mx-auto flex min-h-16 w-full max-w-[1600px] flex-col gap-3 px-3 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:px-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <Link href="/dashboard" className="flex items-center gap-3">
+          <Link href="/markets" className="flex items-center gap-3">
             <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--exchange-yellow)] text-slate-950 shadow-[0_16px_44px_rgba(240,185,11,0.16)]">
                 <CandlestickChart className="size-5" />
             </div>

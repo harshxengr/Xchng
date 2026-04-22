@@ -2,17 +2,17 @@ import { SignUpForm } from "@/components/auth/sign-up-form";
 
 export default function SignUpPage() {
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-            <div className="mb-6">
-                <h1 className="text-2xl font-semibold text-gray-900">Create account</h1>
-                <p className="text-sm text-gray-500 mt-1">
-                    Get started for free today
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-8 shadow-2xl backdrop-blur-xl">
+            <div className="mb-8 text-center">
+                <h1 className="text-3xl font-bold tracking-tight text-white">Get Started</h1>
+                <p className="mt-2 text-sm text-slate-400">
+                    Join thousands of traders on the most advanced exchange
                 </p>
             </div>
             <SignUpForm />
-            <p className="text-sm text-center text-gray-500 mt-6">
+            <p className="mt-8 text-center text-sm text-slate-500">
                 Already have an account?{" "}
-                <a href="/sign-in" className="text-blue-600 hover:underline font-medium">
+                <a href="/sign-in" className="font-semibold text-blue-400 hover:text-blue-300 transition-colors">
                     Sign in
                 </a>
             </p>
