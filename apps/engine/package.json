@@ -16,7 +16,7 @@
     "dev": "tsx watch src/worker.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "dotenv -e ../../.env -- vitest run",
     "lint": "echo 'lint not configured for engine'"
   },
   "dependencies": {
@@ -26,10 +26,10 @@
     "ioredis": "^5.3.0"
   },
   "devDependencies": {
-    "@types/node": "^25.5.2",
+    "@types/node": "^22.10.0",
     "@workspace/typescript-config": "workspace:*",
-    "tsx": "^4.21.0",
-    "typescript": "^6.0.2",
-    "vitest": "^4.1.2"
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.0"
   }
 }

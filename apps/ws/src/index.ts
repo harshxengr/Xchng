@@ -6,7 +6,6 @@ const port = Number(process.env.WS_PORT || 4001);
 const wss = new WebSocketServer({ port });
 const subscriptions = new Map<WebSocket, Set<string>>();
 
-// Redis channels - inline as per junior dev style
 const REDIS_CHANNELS = {
   EVENTS: "engine:events",
 };

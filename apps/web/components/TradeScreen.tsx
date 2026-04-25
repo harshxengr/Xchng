@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createChart, CandlestickSeries, ColorType, type UTCTimestamp } from "lightweight-charts";
-import { Menu, RefreshCcw, Search, Star } from "lucide-react";
+import { RefreshCcw, Search } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
-import { SignOutButton } from "@/components/auth/sign-out-button";
+import { AppTopNav } from "@/components/AppTopNav";
 import {
   getBalances,
   getDepth,
@@ -25,6 +25,7 @@ type WsTradeMessage = { type: "trade"; symbol: string; data: Trade };
 type WsTickerMessage = { type: "ticker"; symbol: string; data: Ticker };
 
 type SessionUser = {
+  id: string;
   name?: string | null;
   email?: string | null;
 };
@@ -64,11 +65,6 @@ function formatNumber(value: number, digits = 2) {
     minimumFractionDigits: 0,
     maximumFractionDigits: digits
   }).format(Number.isFinite(value) ? value : 0);
-}
-
-function formatPct(value: number) {
-  if (!Number.isFinite(value)) return "0.00%";
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -181,40 +177,12 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
   const [ticker, setTicker] = useState<Ticker>({ ...DEFAULT_TICKER, symbol: market });
   const [balances, setBalances] = useState<Record<string, AssetBalance>>({});
   const [allTickers, setAllTickers] = useState<Ticker[]>([]);
-  const [userId, setUserId] = useState("1");
+  const activeUserId = sessionUser?.id || null;
   const [side, setSide] = useState<OrderSide>("buy");
   const [orderType, setOrderType] = useState<OrderType>("limit");
   const [price, setPrice] = useState("0");
   const [quantity, setQuantity] = useState("1");
   const [message, setMessage] = useState("");
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [favoritesLoaded, setFavoritesLoaded] = useState(false);
-
-  // Load favorites
-  useEffect(() => {
-    const saved = localStorage.getItem("favorites");
-    if (saved) {
-      try {
-        setFavorites(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse favorites", e);
-      }
-    }
-    setFavoritesLoaded(true);
-  }, []);
-
-  // Save favorites
-  useEffect(() => {
-    if (favoritesLoaded) {
-      localStorage.setItem("favorites", JSON.stringify(favorites));
-    }
-  }, [favorites, favoritesLoaded]);
-
-  const toggleFavorite = () => {
-    setFavorites(prev => 
-      prev.includes(market) ? prev.filter(s => s !== market) : [...prev, market]
-    );
-  };
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [baseAsset, quoteAsset] = useMemo(() => {
@@ -225,21 +193,17 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
   const bestBid = Number(depth.bids[0]?.[0] ?? 0);
   const bestAsk = Number(depth.asks[0]?.[0] ?? 0);
   const currentPrice = Number(ticker.lastPrice || 0);
-  const changePercent = Number(ticker.priceChangePercent || 0);
-
   const quoteBalance = balances[quoteAsset] ?? EMPTY_BALANCE;
   const baseBalance = balances[baseAsset] ?? EMPTY_BALANCE;
-  const calculatedPrice = orderType === "market" ? (side === "buy" ? bestAsk || currentPrice : bestBid || currentPrice) : Number(price);
+  
+  // For market orders, we use a 5% slippage buffer to ensure the order fills against the book
+  const calculatedPrice = orderType === "market" 
+    ? (side === "buy" ? (bestAsk || currentPrice || 1) * 1.05 : (bestBid || currentPrice || 1) * 0.95) 
+    : Number(price);
   const estimatedValue = calculatedPrice * Number(quantity || 0);
 
   const asks = depth.asks.slice(0, 18);
   const bids = depth.bids.slice(0, 18);
-  const maxDepthQty = Math.max(
-    1,
-    ...asks.map(([, q]) => Number(q)),
-    ...bids.map(([, q]) => Number(q))
-  );
-
   useEffect(() => {
     async function load() {
       try {
@@ -247,13 +211,13 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
           getDepth(market),
           getTrades(market),
           getTicker(market),
-          getBalances(userId),
+          activeUserId ? getBalances(activeUserId) : Promise.resolve({}),
           getTickers()
         ]);
         setDepth(depthData);
         setTrades(tradeData);
         setTicker(tickerData);
-        setBalances(balanceData);
+        if (activeUserId && balanceData) setBalances(balanceData);
         setAllTickers(uniqueTickersBySymbol(tickers));
         
         // Only set initial price if current price state is unset or 0
@@ -269,7 +233,7 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
       }
     }
     void load();
-  }, [market, userId]);
+  }, [market, activeUserId]);
 
   useEffect(() => {
     const ws = new WebSocket(getWsUrl());
@@ -292,18 +256,35 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
 
   async function onPlaceOrder() {
     try {
+      if (!activeUserId) {
+        setMessage("Please sign in to place orders");
+        return;
+      }
+      if (Number(quantity) <= 0) {
+        setMessage("Quantity must be greater than 0");
+        return;
+      }
+      if (calculatedPrice <= 0) {
+        setMessage("Invalid price");
+        return;
+      }
       setIsSubmitting(true);
       setMessage("");
       await placeOrder({
         market,
-        userId,
+        userId: activeUserId,
         side,
         quantity: Number(quantity),
         // backend currently accepts price only; for market orders we execute at best level
         price: calculatedPrice
       });
       setMessage(`${side.toUpperCase()} ${orderType.toUpperCase()} order placed`);
-      const balanceData = await getBalances(userId);
+      
+      // Auto-clear message after 3 seconds
+      setTimeout(() => setMessage(""), 3000);
+
+      // Refresh balances
+      const balanceData = await getBalances(activeUserId);
       setBalances(balanceData);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to place order");
@@ -314,45 +295,12 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
 
   return (
     <main className="min-h-screen bg-[#070a11] text-white">
+      <AppTopNav user={sessionUser} />
       <div className="mx-auto max-w-[1800px] px-3 py-3">
-        <header className="flex items-center justify-between border-b border-white/10 px-2 pb-3">
-          <div className="flex items-center gap-6">
-            <button className="rounded-md p-1 text-slate-300 hover:bg-white/10"><Menu className="size-5" /></button>
-            <nav className="flex items-center gap-6 text-sm">
-              <Link href="/" className="font-medium text-white">Exchange</Link>
-              <Link href="/markets" className="text-slate-300 hover:text-white">Markets</Link>
-              <Link href={`/trade/${market}`} className="text-slate-300 hover:text-white">Trade</Link>
-            </nav>
-          </div>
-          <div className="flex items-center gap-3">
-            {sessionUser ? (
-              <>
-                <div className="hidden text-right text-xs sm:block">
-                  <p className="font-medium text-slate-100">{sessionUser.name || "Trader"}</p>
-                  <p className="text-slate-400">{sessionUser.email || ""}</p>
-                </div>
-                <div className="hidden [&>button]:rounded-lg [&>button]:border-white/20 [&>button]:bg-transparent [&>button]:text-slate-100 sm:block">
-                  <SignOutButton />
-                </div>
-              </>
-            ) : (
-              <>
-                <Link href="/sign-in" className="rounded-md border border-white/15 px-3 py-1.5 text-sm text-slate-100 hover:bg-white/10">Sign in</Link>
-                <Link href="/sign-up" className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-emerald-400">Sign up</Link>
-              </>
-            )}
-          </div>
-        </header>
-
         <section className="mt-2 flex items-center justify-between border-b border-white/10 px-2 py-2 text-xs">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
-              <button onClick={toggleFavorite} className="group/star rounded-full p-1 transition hover:bg-white/10">
-                <Star 
-                  className={`size-4 transition-all ${favorites.includes(market) ? "fill-[var(--exchange-yellow)] text-[var(--exchange-yellow)] scale-110" : "text-slate-600 group-hover/star:text-[var(--exchange-yellow)]"}`} 
-                />
-              </button>
-              <div className="text-lg font-bold text-white">{baseAsset} / {quoteAsset}</div>
+              <div className="text-lg font-bold text-white pl-2">{baseAsset} / {quoteAsset}</div>
             </div>
             <div className={`text-lg font-bold ${Number(currentPrice) > 0 ? "text-emerald-400" : "text-slate-400"}`}>
               {Number(currentPrice) > 0 ? `$${formatNumber(currentPrice, 2)}` : "--"}
@@ -375,7 +323,6 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
               </div>
             </div>
           </div>
-          <button className="rounded p-1 text-slate-400 hover:bg-white/10"><Search className="size-4" /></button>
         </section>
 
         {message ? <p className="mt-2 rounded border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200">{message}</p> : null}
@@ -385,42 +332,46 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
             <LightweightCandleChart trades={trades} />
           </div>
 
-          <div className="rounded border border-white/10 bg-[#0b111b]">
+          <div className="rounded border border-white/10 bg-[#0b111b] flex flex-col">
+            <div className="border-b border-white/10 px-3 py-2">
+              <h3 className="text-sm font-semibold text-slate-200">Orderbook</h3>
+            </div>
             <div className="grid grid-cols-3 border-b border-white/10 px-3 py-2 text-[11px] text-slate-400">
               <span>Price</span>
               <span className="text-right">Size</span>
               <span className="text-right">Total</span>
             </div>
-            <div className="flex h-full flex-col p-2 text-xs">
-              <div className="flex-1 overflow-auto">
+            <div className="flex flex-1 flex-col overflow-hidden p-3 text-[11px]">
+              <div className="flex-1 overflow-y-auto scrollbar-hide">
                 {asks.length > 0 ? (
                   asks.map((ask) => (
-                    <div key={ask[0]} className="flex cursor-pointer justify-between px-2 py-0.5 hover:bg-rose-500/10" onClick={() => setPrice(ask[0])}>
-                      <span className="text-rose-400">{formatNumber(Number(ask[0]), 2)}</span>
-                      <span className="text-right text-slate-300">{formatNumber(Number(ask[1]), 4)}</span>
-                      <span className="text-right text-slate-500">{formatNumber(Number(ask[0]) * Number(ask[1]), 2)}</span>
+                    <div key={ask[0]} className="flex cursor-pointer items-center justify-between py-1 transition hover:bg-rose-500/10 px-1 rounded" onClick={() => setPrice(ask[0])}>
+                      <span className="font-bold text-rose-400 w-1/3">{formatNumber(Number(ask[0]), 2)}</span>
+                      <span className="text-right text-slate-300 w-1/3 tabular-nums">{formatNumber(Number(ask[1]), 4)}</span>
+                      <span className="text-right text-slate-500 w-1/3 tabular-nums">{formatNumber(Number(ask[0]) * Number(ask[1]), 2)}</span>
                     </div>
                   ))
                 ) : (
-                  <div className="flex h-full items-center justify-center text-slate-600 italic">No asks</div>
+                  <div className="flex h-full items-center justify-center text-slate-600 italic">No sell orders</div>
                 )}
               </div>
 
-              <div className="my-2 border-y border-white/10 py-2 text-center text-base font-bold text-emerald-400">
-                {formatNumber(currentPrice, 2)}
+              <div className="my-3 border-y border-white/5 py-3 text-center">
+                 <div className="text-2xl font-black text-emerald-400 tracking-tight">{formatNumber(currentPrice, 2)}</div>
+                 <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Market Price</div>
               </div>
 
-              <div className="flex-1 overflow-auto">
+              <div className="flex-1 overflow-y-auto scrollbar-hide">
                 {bids.length > 0 ? (
                   bids.map((bid) => (
-                    <div key={bid[0]} className="flex cursor-pointer justify-between px-2 py-0.5 hover:bg-emerald-500/10" onClick={() => setPrice(bid[0])}>
-                      <span className="text-emerald-400">{formatNumber(Number(bid[0]), 2)}</span>
-                      <span className="text-right text-slate-300">{formatNumber(Number(bid[1]), 4)}</span>
-                      <span className="text-right text-slate-500">{formatNumber(Number(bid[0]) * Number(bid[1]), 2)}</span>
+                    <div key={bid[0]} className="flex cursor-pointer items-center justify-between py-1 transition hover:bg-emerald-500/10 px-1 rounded" onClick={() => setPrice(bid[0])}>
+                      <span className="font-bold text-emerald-400 w-1/3">{formatNumber(Number(bid[0]), 2)}</span>
+                      <span className="text-right text-slate-300 w-1/3 tabular-nums">{formatNumber(Number(bid[1]), 4)}</span>
+                      <span className="text-right text-slate-500 w-1/3 tabular-nums">{formatNumber(Number(bid[0]) * Number(bid[1]), 2)}</span>
                     </div>
                   ))
                 ) : (
-                  <div className="flex h-full items-center justify-center text-slate-600 italic">No bids</div>
+                  <div className="flex h-full items-center justify-center text-slate-600 italic">No buy orders</div>
                 )}
               </div>
             </div>
@@ -435,7 +386,17 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
               <button onClick={() => setOrderType("limit")} className={`rounded px-3 py-1 ${orderType === "limit" ? "bg-white/15 text-white" : "text-slate-400"}`}>Limit</button>
               <button onClick={() => setOrderType("market")} className={`rounded px-3 py-1 ${orderType === "market" ? "bg-white/15 text-white" : "text-slate-400"}`}>Market</button>
             </div>
-            <label className="mb-3 block text-xs text-slate-400">Available Balance {formatNumber(quoteBalance.available, 2)} {quoteAsset}</label>
+            <label 
+              className="mb-3 block text-xs text-slate-400 cursor-pointer hover:text-emerald-400 transition-colors"
+              onClick={() => {
+                const maxQty = side === "buy"
+                  ? (calculatedPrice > 0 ? quoteBalance.available / calculatedPrice : 0)
+                  : baseBalance.available;
+                setQuantity(maxQty.toFixed(4));
+              }}
+            >
+              Available Balance {formatNumber(quoteBalance.available, 2)} {quoteAsset}
+            </label>
             <div className="space-y-3">
               <label className="block">
                 <span className="mb-1 block text-xs text-slate-400">Price ({quoteAsset})</span>
@@ -472,25 +433,39 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
                   <button
                     key={percent}
                     type="button"
+                    disabled={!activeUserId}
                     onClick={() => {
                       const maxQty = side === "buy"
                         ? (calculatedPrice > 0 ? quoteBalance.available / calculatedPrice : 0)
                         : baseBalance.available;
                       setQuantity((maxQty * percent / 100).toFixed(4));
                     }}
-                    className="rounded border border-white/10 py-1 text-slate-300 hover:bg-white/10"
+                    className="rounded border border-white/10 py-1 text-slate-300 hover:bg-white/10 disabled:opacity-30"
                   >
                     {percent}%
                   </button>
                 ))}
               </div>
-              <Button
-                className={`h-11 w-full ${side === "buy" ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-rose-500 text-white hover:bg-rose-400"}`}
-                onClick={onPlaceOrder}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? "Placing..." : side === "buy" ? "Buy" : "Sell"}
-              </Button>
+              {activeUserId ? (
+                <Button
+                  className={`h-11 w-full ${side === "buy" ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-rose-500 text-white hover:bg-rose-400"}`}
+                  onClick={onPlaceOrder}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Placing..." : side === "buy" ? "Buy" : "Sell"}
+                </Button>
+              ) : (
+                <div className="space-y-3">
+                  <Link href="/sign-in" className="block">
+                    <Button className="h-11 w-full bg-white/10 text-white hover:bg-white/20">
+                      Sign in to Trade
+                    </Button>
+                  </Link>
+                  <p className="text-center text-[10px] text-slate-500">
+                    Sign in to access your wallet and place orders
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -530,13 +505,13 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
                 <span className="text-right">Size</span>
                 <span className="text-right">Time</span>
               </div>
-              <div className="max-h-52 space-y-0.5 overflow-auto text-xs">
+              <div className="max-h-52 space-y-0.5 overflow-auto text-[11px] pr-1">
                 {trades.slice(0, 50).map((trade, i) => (
-                  <div key={`${trade.id}-${i}`} className="grid grid-cols-3 rounded px-2 py-1.5 transition hover:bg-white/5">
-                    <span className={i % 2 === 0 ? "text-emerald-400" : "text-rose-400"}>{formatNumber(Number(trade.price), 2)}</span>
+                  <div key={`${trade.timestamp}-${trade.price}-${trade.quantity}-${i}`} className="grid grid-cols-3 rounded px-2 py-1 transition hover:bg-white/5">
+                    <span className={`font-bold ${i % 2 === 0 ? "text-emerald-400" : "text-rose-400"}`}>{formatNumber(Number(trade.price), 2)}</span>
                     <span className="text-right text-slate-300 tabular-nums">{formatNumber(Number(trade.quantity), 4)}</span>
                     <span className="text-right text-slate-500 tabular-nums">
-                      {new Date(trade.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                      {new Date(trade.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}
                     </span>
                   </div>
                 ))}

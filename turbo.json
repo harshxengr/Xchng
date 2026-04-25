@@ -53,7 +53,18 @@
       ]
     },
     "dev": {
-      "dependsOn": ["^db:generate", "@workspace/database#build"],
+      "dependsOn": [
+        "^db:generate",
+        "@workspace/database#build"
+      ],
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "dependsOn": [
+        "^db:generate",
+        "^build"
+      ],
       "cache": false,
       "persistent": true
     },
@@ -61,7 +72,9 @@
       "cache": false
     },
     "db:generate": {
-      "outputs": ["generated/**"],
+      "outputs": [
+        "generated/**"
+      ],
       "cache": false
     },
     "db:migrate": {

@@ -4,10 +4,12 @@ import crypto from "node:crypto";
 import { Redis } from "ioredis";
 import * as database from "@workspace/database";
 import * as serverEnv from "@workspace/env/server";
+import * as authModule from "@workspace/auth/server";
 import type { EngineCommandResult } from "@workspace/types";
 
 const prisma = database.prisma ?? database.default?.prisma;
 const env = serverEnv.env ?? serverEnv.default?.env;
+const auth = authModule.auth ?? (authModule as typeof authModule & { default?: typeof authModule }).default?.auth;
 
 const app = express();
 const port = env.PORT || 4000;
@@ -62,8 +64,54 @@ redisSubscriber.on("pmessage", (_pattern, channel, message) => {
     }
 });
 
-app.use(cors());
+app.use(cors({
+    origin: env.NEXT_PUBLIC_APP_URL,
+    credentials: true,
+}));
 app.use(express.json());
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "xchng_secret_123";
+
+function toWebHeaders(headers: express.Request["headers"]) {
+    const result = new Headers();
+    for (const [key, value] of Object.entries(headers)) {
+        if (Array.isArray(value)) {
+            result.set(key, value.join(", "));
+        } else if (typeof value === "string") {
+            result.set(key, value);
+        }
+    }
+    return result;
+}
+
+// Middleware to check for either a valid session or internal secret
+async function validateSession(req: express.Request, res: express.Response, next: express.NextFunction) {
+    // 1. Check for internal secret (for mm-bot)
+    const authHeader = req.headers.authorization;
+    if (authHeader === `Bearer ${INTERNAL_SECRET}`) {
+        return next();
+    }
+
+    // 2. Check for Better Auth session
+    try {
+        const session = await auth.api.getSession({
+            headers: toWebHeaders(req.headers),
+        });
+
+        if (session) {
+            // Ensure the userId in the body matches the session userId
+            if (req.body.userId && req.body.userId !== session.user.id) {
+                return res.status(403).json({ success: false, error: "Unauthorized userId" });
+            }
+            // Attach user to request if needed
+            (req as any).user = session.user;
+            return next();
+        }
+    } catch (e) {
+        console.error("Session validation error:", e);
+    }
+
+    res.status(401).json({ success: false, error: "Authentication required" });
+}
 
 // --- INTERNAL HELPERS ---
 
@@ -191,7 +239,7 @@ async function getMmBotStatuses(): Promise<MmBotStatus[]> {
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 // Orders
-app.post("/api/v1/order", async (req, res) => {
+app.post("/api/v1/order", validateSession, async (req, res) => {
     try {
         const { market, userId, side, price, quantity } = req.body;
         const result = await sendCommandToEngine("PLACE_ORDER", {
@@ -207,7 +255,7 @@ app.post("/api/v1/order", async (req, res) => {
     }
 });
 
-app.delete("/api/v1/order", async (req, res) => {
+app.delete("/api/v1/order", validateSession, async (req, res) => {
     try {
         const result = await sendCommandToEngine("CANCEL_ORDER", req.body);
         res.json(result);
@@ -339,7 +387,7 @@ app.get("/api/v1/balances", async (req, res) => {
     }
 });
 
-app.post("/api/v1/deposit", async (req, res) => {
+app.post("/api/v1/deposit", validateSession, async (req, res) => {
     try {
         const { userId, asset, amount } = req.body;
         const result = await sendCommandToEngine("DEPOSIT", {

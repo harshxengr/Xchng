@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, RefreshCcw, Search, Star } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
-import { ExchangeCard, ExchangePage, SectionTitle, StatTile, StatusPill } from "@/components/exchange-ui";
+import { ExchangeCard, ExchangePage, SectionTitle } from "@/components/exchange-ui";
 import { getTickers, type Ticker } from "@/app/lib/api";
 
 function uniqueTickersBySymbol(tickers: Ticker[]) {
@@ -84,98 +84,12 @@ export function MarketsScreen() {
       .filter((ticker) => !normalized || ticker.symbol?.toLowerCase().includes(normalized));
   }, [query, tickers]);
 
-  const summary = useMemo(() => {
-    const totalTrades = tickers.reduce((sum, ticker) => sum + Number(ticker.trades || 0), 0);
-    const topVolume = tickers.reduce((max, ticker) => Math.max(max, Number(ticker.quoteVolume || 0)), 0);
-
-    return {
-      total: tickers.length,
-      active: tickers.filter((ticker) => Number(ticker.trades) > 0).length,
-      trades: totalTrades,
-      topVolume,
-    };
-  }, [tickers]);
-
   const featured = useMemo(() => {
-    return tickers.filter(t => favorites.includes(t.symbol));
+    return tickers.filter((ticker) => favorites.includes(ticker.symbol));
   }, [tickers, favorites]);
-
-  const tableTickers = useMemo(() => {
-    return filteredTickers.filter(t => !favorites.includes(t.symbol));
-  }, [filteredTickers, favorites]);
 
   return (
     <ExchangePage>
-      <ExchangeCard className="overflow-hidden">
-        <div className="grid gap-5 border-b border-white/10 bg-gradient-to-r from-yellow-400/10 via-white/[0.03] to-sky-500/10 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_520px] lg:items-end">
-          <div>
-            <StatusPill tone="yellow">Spot markets</StatusPill>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Markets</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-              Search pairs, compare activity, and open a trading workspace with live depth, candles, balances, and order management.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-4">
-            <StatTile label="Pairs" value={summary.total} />
-            <StatTile label="Active" value={summary.active} tone="green" />
-            <StatTile label="Trades" value={summary.trades} />
-            <StatTile label="Top quote vol" value={formatNumber(summary.topVolume, 0)} tone="yellow" />
-          </div>
-        </div>
-
-        {loading && tickers.length === 0 ? (
-          <div className="flex h-64 items-center justify-center border-b border-white/10 bg-white/[0.02]">
-            <div className="flex flex-col items-center gap-3">
-              <RefreshCcw className="size-8 animate-spin text-emerald-500" />
-              <p className="text-sm text-slate-500">Loading markets...</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            {featured.length > 0 ? (
-              <div className="grid gap-3 p-4 lg:grid-cols-3">
-                {featured.map((ticker, index) => {
-                  const changePercent = Number(ticker.priceChangePercent || 0);
-                  return (
-                    <Link key={ticker.symbol || index} href={`/trade/${ticker.symbol}`} className="exchange-card-soft rounded-2xl p-4 transition hover:bg-white/[0.06]">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-lg font-semibold text-white">{ticker.symbol?.replace("_", " / ")}</p>
-                          <p className="mt-1 text-xs text-slate-500">{ticker.trades} trades</p>
-                        </div>
-                        <button 
-                          onClick={(e) => toggleFavorite(e, ticker.symbol)}
-                          className="group/star rounded-full p-1.5 transition hover:bg-white/10"
-                        >
-                          <Star 
-                            className={`size-4 transition-all ${favorites.includes(ticker.symbol) ? "fill-yellow-400 text-yellow-400 scale-110" : "text-slate-500 group-hover/star:text-yellow-400"}`} 
-                          />
-                        </button>
-                      </div>
-                      <div className="mt-5 flex items-end justify-between gap-3">
-                        <div>
-                          <p className="text-xs text-slate-500">Last price</p>
-                          <p className="mt-1 text-2xl font-semibold text-white tabular-nums">{formatNumber(Number(ticker.lastPrice), 2)}</p>
-                        </div>
-                        <p className={`text-sm font-semibold tabular-nums ${changePercent >= 0 ? "text-[var(--exchange-green)]" : "text-[var(--exchange-red)]"}`}>
-                          {changePercent >= 0 ? "+" : ""}
-                          {formatNumber(changePercent, 2)}%
-                        </p>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="px-5 py-8 text-center">
-                <p className="text-sm text-slate-500">Star markets to see them here in your watchlist.</p>
-              </div>
-            )}
-          </>
-        )}
-      </ExchangeCard>
-
       {message ? (
         <ExchangeCard className="border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm font-medium text-rose-200">
           {message}
@@ -183,6 +97,58 @@ export function MarketsScreen() {
       ) : null}
 
       <ExchangeCard>
+        <SectionTitle eyebrow="Pinned" title="Pinned markets" />
+        {featured.length > 0 ? (
+          <div className="grid gap-3 p-4 lg:grid-cols-3">
+            {featured.map((ticker, index) => {
+              const changePercent = Number(ticker.priceChangePercent || 0);
+              return (
+                <Link key={ticker.symbol || index} href={`/trade/${ticker.symbol}`} className="exchange-card-soft rounded-2xl p-4 transition hover:bg-white/[0.06]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold text-white">{ticker.symbol?.replace("_", " / ")}</p>
+                      <p className="mt-1 text-xs text-slate-500">{ticker.trades} trades</p>
+                    </div>
+                    <button
+                      onClick={(event) => toggleFavorite(event, ticker.symbol)}
+                      className="group/star rounded-full p-1.5 transition hover:bg-white/10"
+                    >
+                      <Star
+                        className={`size-4 transition-all ${favorites.includes(ticker.symbol) ? "fill-yellow-400 text-yellow-400 scale-110" : "text-slate-500 group-hover/star:text-yellow-400"}`}
+                      />
+                    </button>
+                  </div>
+                  <div className="mt-5 flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-slate-500">Last price</p>
+                      <p className="mt-1 text-2xl font-semibold text-white tabular-nums">{formatNumber(Number(ticker.lastPrice), 2)}</p>
+                    </div>
+                    <p className={`text-sm font-semibold tabular-nums ${changePercent >= 0 ? "text-[var(--exchange-green)]" : "text-[var(--exchange-red)]"}`}>
+                      {changePercent >= 0 ? "+" : ""}
+                      {formatNumber(changePercent, 2)}%
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="px-5 py-8 text-center">
+            <p className="text-sm text-slate-500">Star markets to see them here in your watchlist.</p>
+          </div>
+        )}
+      </ExchangeCard>
+
+      <ExchangeCard>
+        {loading && tickers.length === 0 ? (
+          <div className="flex h-64 items-center justify-center border-b border-white/10 bg-white/[0.02]">
+            <div className="flex flex-col items-center gap-3">
+              <RefreshCcw className="size-8 animate-spin text-emerald-500" />
+              <p className="text-sm text-slate-500">Loading markets...</p>
+            </div>
+          </div>
+        ) : null}
+
         <SectionTitle
           eyebrow="Directory"
           title="All pairs"
@@ -225,21 +191,21 @@ export function MarketsScreen() {
 
         <div className="hidden overflow-x-auto lg:block">
           <div className="min-w-[980px]">
-            <div className="grid grid-cols-[1.3fr_repeat(5,minmax(0,1fr))_110px] gap-3 border-b border-white/10 bg-white/[0.025] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+            <div className="grid grid-cols-[1.3fr_repeat(5,minmax(0,1fr))_160px] gap-3 border-b border-white/10 bg-white/[0.025] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
               <span>Pair</span>
               <span className="text-right">Last price</span>
               <span className="text-right">24h change</span>
               <span className="text-right">High</span>
               <span className="text-right">Low</span>
               <span className="text-right">Volume</span>
-              <span className="text-right">Action</span>
+              <span className="text-right">Actions</span>
             </div>
 
             <div className="divide-y divide-white/10">
               {filteredTickers.map((ticker, index) => {
                 const changePercent = Number(ticker.priceChangePercent || 0);
                 return (
-                  <div key={ticker.symbol || index} className="grid grid-cols-[1.3fr_repeat(5,minmax(0,1fr))_110px] items-center gap-3 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/[0.035]">
+                  <div key={ticker.symbol || index} className="grid grid-cols-[1.3fr_repeat(5,minmax(0,1fr))_160px] items-center gap-3 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/[0.035]">
                     <div className="flex items-center gap-3">
                       <button 
                         onClick={(e) => toggleFavorite(e, ticker.symbol)}
@@ -262,13 +228,17 @@ export function MarketsScreen() {
                     <span className="text-right tabular-nums">{formatNumber(Number(ticker.high), 2)}</span>
                     <span className="text-right tabular-nums">{formatNumber(Number(ticker.low), 2)}</span>
                     <span className="text-right tabular-nums">{formatNumber(Number(ticker.volume), 2)}</span>
-                    <div className="flex justify-end">
-                      <Button asChild className="h-9 rounded-xl bg-[var(--exchange-yellow)] px-3 text-sm font-semibold text-slate-950 hover:bg-yellow-300">
-                        <Link href={`/trade/${ticker.symbol}`}>
+                    <div className="flex justify-end gap-2">
+                      <Link href={`/trade/${ticker.symbol}`}>
+                        <Button className="h-8 rounded-lg bg-emerald-500 px-3 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition-colors">
                           Trade
-                          <ArrowRight className="size-4" />
-                        </Link>
-                      </Button>
+                        </Button>
+                      </Link>
+                      <Link href={`/wallet?asset=${ticker.symbol?.split("_")[0]}`}>
+                        <Button variant="outline" className="h-8 rounded-lg border-white/10 bg-white/5 px-3 text-xs font-medium text-slate-300 hover:bg-white/10">
+                           Deposit
+                        </Button>
+                      </Link>
                     </div>
                   </div>
                 );
@@ -278,41 +248,48 @@ export function MarketsScreen() {
         </div>
 
         <div className="grid gap-3 p-3 lg:hidden">
-          {filteredTickers.map((ticker, index) => {
+          {filteredTickers.map((ticker) => {
             const changePercent = Number(ticker.priceChangePercent || 0);
             return (
-              <Link key={ticker.symbol} href={`/trade/${ticker.symbol}`} className="exchange-card-soft rounded-2xl p-4">
+              <div key={ticker.symbol} className="exchange-card-soft rounded-2xl p-5 bg-white/[0.03] border border-white/5">
                 <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <button 
-                        onClick={(e) => toggleFavorite(e, ticker.symbol)}
-                        className="group/star rounded-full p-1 transition hover:bg-white/10"
-                      >
-                        <Star 
-                          className={`size-4 transition-all ${favorites.includes(ticker.symbol) ? "fill-yellow-400 text-yellow-400 scale-110" : "text-slate-600 group-hover/star:text-yellow-400"}`} 
-                        />
-                      </button>
-                      <div>
-                        <p className="text-lg font-semibold text-white">{ticker.symbol?.replace("_", " / ")}</p>
-                        <p className="mt-1 text-xs text-slate-500">{ticker.trades} trades · Vol {formatNumber(Number(ticker.volume), 2)}</p>
-                      </div>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={(e) => toggleFavorite(e, ticker.symbol)}
+                      className="group/star rounded-full p-1.5 transition hover:bg-white/10"
+                    >
+                      <Star 
+                        className={`size-4 transition-all ${favorites.includes(ticker.symbol) ? "fill-yellow-400 text-yellow-400 scale-110" : "text-slate-600 group-hover/star:text-yellow-400"}`} 
+                      />
+                    </button>
+                    <div>
+                      <p className="text-lg font-bold text-white">{ticker.symbol?.replace("_", " / ")}</p>
+                      <p className="mt-1 text-xs text-slate-500">{ticker.trades} trades · Vol {formatNumber(Number(ticker.volume), 2)}</p>
                     </div>
-                  <p className={`text-sm font-semibold ${changePercent >= 0 ? "text-[var(--exchange-green)]" : "text-[var(--exchange-red)]"}`}>
-                    {changePercent >= 0 ? "+" : ""}
-                    {formatNumber(changePercent, 2)}%
-                  </p>
-                </div>
-                <div className="mt-4 flex items-end justify-between">
-                  <div>
-                    <p className="text-xs text-slate-500">Last</p>
-                    <p className="mt-1 text-xl font-semibold text-white">{formatNumber(Number(ticker.lastPrice), 2)}</p>
                   </div>
-                  <span className="inline-flex items-center gap-1 text-sm font-medium text-[var(--exchange-yellow)]">
-                    Trade
-                    <ArrowRight className="size-4" />
-                  </span>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-white tabular-nums">{formatNumber(Number(ticker.lastPrice), 2)}</p>
+                    <p className={`text-xs font-semibold mt-1 ${changePercent >= 0 ? "text-[var(--exchange-green)]" : "text-[var(--exchange-red)]"}`}>
+                      {changePercent >= 0 ? "+" : ""}
+                      {formatNumber(changePercent, 2)}%
+                    </p>
+                  </div>
                 </div>
-              </Link>
+                
+                <div className="mt-6 flex gap-3">
+                  <Link href={`/trade/${ticker.symbol}`} className="flex-1">
+                    <Button className="w-full h-10 rounded-xl bg-emerald-500 font-bold text-slate-950 hover:bg-emerald-400">
+                      Trade
+                      <ArrowRight className="size-4 ml-2" />
+                    </Button>
+                  </Link>
+                  <Link href={`/wallet?asset=${ticker.symbol?.split("_")[0]}`}>
+                    <Button variant="outline" className="h-10 px-4 rounded-xl border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 font-semibold">
+                      Deposit
+                    </Button>
+                  </Link>
+                </div>
+              </div>
             );
           })}
         </div>
