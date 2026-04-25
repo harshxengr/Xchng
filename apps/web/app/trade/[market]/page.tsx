@@ -15,6 +15,7 @@ export default async function TradePage({
       sessionUser={
         session
           ? {
+              id: session.user.id,
               name: session.user.name ?? null,
               email: session.user.email ?? null
             }

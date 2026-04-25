@@ -5,12 +5,9 @@ import { usePathname } from "next/navigation";
 import {
   Bot,
   CandlestickChart,
-  ChartNoAxesCombined,
   CircleDot,
-  LayoutGrid,
   Search,
 } from "lucide-react";
-import { Button } from "@workspace/ui/components/button";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 
 type ProtectedShellNavProps = {
@@ -46,12 +43,6 @@ export function ProtectedShellNav({ user, canManageMmBot }: ProtectedShellNavPro
       label: "Markets",
       icon: Search,
       active: pathname === "/markets"
-    },
-    {
-      href: "/trade/TATA_INR",
-      label: "Trade",
-      icon: ChartNoAxesCombined,
-      active: pathname.startsWith("/trade/")
     }
   ];
 
@@ -89,10 +80,6 @@ export function ProtectedShellNav({ user, canManageMmBot }: ProtectedShellNavPro
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button asChild className="h-10 rounded-xl bg-[var(--exchange-yellow)] px-4 text-sm font-semibold text-slate-950 hover:bg-yellow-300">
-            <Link href="/trade/TATA_INR">Trade TATA/INR</Link>
-          </Button>
-
           <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2">
             <div className="flex size-9 items-center justify-center rounded-xl bg-white/8 text-xs font-semibold text-white">
               {initials}

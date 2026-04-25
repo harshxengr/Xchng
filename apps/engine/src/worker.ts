@@ -11,7 +11,6 @@ import { Engine } from "./trade/Engine.js";
 const prisma = database.prisma ?? database.default?.prisma;
 const env = serverEnv.env ?? serverEnv.default?.env;
 
-// Redis channels - inline as per junior dev style
 const REDIS_CHANNELS = {
   COMMANDS: "engine:commands",
   EVENTS: "engine:events",
@@ -39,11 +38,12 @@ async function start() {
 
         const [, payload] = result;
         const command = JSON.parse(payload) as EngineCommand;
+        console.log(`[ENGINE] Received command: ${command.type} (ID: ${command.requestId})`);
 
         try {
             await handleCommand(command);
         } catch (error: any) {
-            console.error("Engine command failed:", error);
+            console.error(`[ENGINE] Command ${command.type} failed:`, error);
             await publishRpcResponse(command.requestId, false, undefined, error.message);
         }
     }
@@ -56,46 +56,21 @@ async function handleCommand(command: EngineCommand) {
         await engine.ensureUserLoaded(payload.userId);
         const result = engine.placeOrder(payload);
 
-        // PERSIST TO DB using Prisma raw SQL
-        await prisma.$queryRaw`
-            INSERT INTO "Order" ("id", "market", "userId", "side", "price", "quantity", "filledQuantity", "status", "createdAt", "updatedAt")
-            VALUES (${result.orderId}, ${payload.market}, ${payload.userId}, ${payload.side}, ${payload.price.toString()}, ${payload.quantity.toString()}, ${result.executedQty.toString()}, ${result.status}, ${new Date()}, ${new Date()})
-        `;
-        
-        // Sync balances back to DB for matched users
-        const touchedUsers = [payload.userId, ...result.fills.map((f: any) => f.otherUserId)];
-        for (const uid of Array.from(new Set(touchedUsers))) {
-            const balances = engine.getBalances(uid);
-            for (const [asset, bal] of Object.entries(balances)) {
-                const balance = bal as { available: number; locked: number };
-                await prisma.$queryRaw`
-                    INSERT INTO "Balance" ("id", "userId", "asset", "available", "locked")
-                    VALUES (gen_random_uuid(), ${uid}, ${asset}, ${balance.available.toString()}, ${balance.locked.toString()})
-                    ON CONFLICT ("userId", "asset") DO UPDATE SET "available" = ${balance.available.toString()}, "locked" = ${balance.locked.toString()}
-                `;
-            }
-        }
+        // --- FAST PATH: Send real-time updates and RPC response first ---
+        const depth = engine.getDepth(payload.market);
+        const ticker = engine.getTicker(payload.market);
 
-        // Cache depth in Redis
-        await publisher.set(REDIS_KEYS.depth(payload.market), JSON.stringify(engine.getDepth(payload.market)));
+        // 1. Update depth in Redis cache
+        await publisher.set(REDIS_KEYS.depth(payload.market), JSON.stringify(depth));
 
-        // RPC Response
-        await publishRpcResponse(requestId, true, result);
-
-        // BROADCAST EVENTS (for WS and DB workers)
-        await publishEvent("ORDER_PLACED", payload.market, { ...result, userId: payload.userId });
+        // 2. Broadcast events for real-time UI (WebSocket)
+        await publishEvent("DEPTH_UPDATED", payload.market, depth);
+        await publishEvent("TICKER_UPDATED", payload.market, { ...ticker, market: payload.market, timestamp: Date.now() });
         
         for (const fill of result.fills) {
-            await publishEvent("ORDER_UPDATED", payload.market, { 
-                orderId: fill.makerOrderId, 
-                userId: fill.otherUserId, 
-                market: payload.market, // Added for DB Worker
-                filledQuantity: fill.makerFilledQuantity, 
-                status: fill.makerStatus 
-            });
             await publishEvent("TRADE_CREATED", payload.market, {
                 tradeId: fill.tradeId,
-                market: payload.market, // Added for DB Worker consistency
+                market: payload.market,
                 price: fill.price,
                 quantity: fill.qty,
                 buyerUserId: payload.side === "buy" ? payload.userId : fill.otherUserId,
@@ -103,35 +78,78 @@ async function handleCommand(command: EngineCommand) {
                 timestamp: Date.now()
             });
         }
+        await publishEvent("ORDER_PLACED", payload.market, { ...result, userId: payload.userId });
 
-        // Broadcast Ticker Update
-        const ticker = engine.getTicker(payload.market);
-        await publishEvent("TICKER_UPDATED", payload.market, {
-            ...ticker,
-            market: payload.market,
-            timestamp: Date.now()
-        });
+        // 3. Send RPC response back to API server immediately
+        await publishRpcResponse(requestId, true, result);
+
+        // --- SLOW PATH: Persist to DB in the background (or afterwards) ---
+        // We do this after the user has received confirmation for maximum speed.
+        (async () => {
+            try {
+                await prisma.$queryRaw`
+                    INSERT INTO "Order" ("id", "market", "userId", "side", "price", "quantity", "filledQuantity", "status", "createdAt", "updatedAt")
+                    VALUES (${result.orderId}, ${payload.market}, ${payload.userId}, ${payload.side}, ${payload.price.toString()}, ${payload.quantity.toString()}, ${result.executedQty.toString()}, ${result.status}, ${new Date()}, ${new Date()})
+                `;
+                
+                const touchedUsers = [payload.userId, ...result.fills.map((f: any) => f.otherUserId)];
+                for (const uid of Array.from(new Set(touchedUsers))) {
+                    const balances = engine.getBalances(uid);
+                    for (const [asset, bal] of Object.entries(balances)) {
+                        const balance = bal as { available: number; locked: number };
+                        await prisma.$queryRaw`
+                            INSERT INTO "Balance" ("id", "userId", "asset", "available", "locked")
+                            VALUES (gen_random_uuid(), ${uid}, ${asset}, ${balance.available.toString()}, ${balance.locked.toString()})
+                            ON CONFLICT ("userId", "asset") DO UPDATE SET "available" = ${balance.available.toString()}, "locked" = ${balance.locked.toString()}
+                        `;
+                    }
+                }
+
+                for (const fill of result.fills) {
+                    await publishEvent("ORDER_UPDATED", payload.market, { 
+                        orderId: fill.makerOrderId, 
+                        userId: fill.otherUserId, 
+                        market: payload.market,
+                        filledQuantity: fill.makerFilledQuantity, 
+                        status: fill.makerStatus 
+                    });
+                }
+            } catch (dbError) {
+                console.error("Delayed DB persistence error:", dbError);
+            }
+        })();
 
     } else if (type === "CANCEL_ORDER") {
         const result = engine.cancelOrder(payload.market, payload.orderId);
 
-        await prisma.$queryRaw`
-            UPDATE "Order" SET "filledQuantity" = ${result.executedQty.toString()}, "status" = 'CANCELLED', "updatedAt" = ${new Date()} WHERE "id" = ${payload.orderId}
-        `;
-
-        const balances = engine.getBalances(payload.userId);
-        for (const [asset, bal] of Object.entries(balances)) {
-            const balance = bal as { available: number; locked: number };
-            await prisma.$queryRaw`
-                INSERT INTO "Balance" ("id", "userId", "asset", "available", "locked")
-                VALUES (gen_random_uuid(), ${payload.userId}, ${asset}, ${balance.available.toString()}, ${balance.locked.toString()})
-                ON CONFLICT ("userId", "asset") DO UPDATE SET "available" = ${balance.available.toString()}, "locked" = ${balance.locked.toString()}
-            `;
-        }
-        await publisher.set(REDIS_KEYS.depth(payload.market), JSON.stringify(engine.getDepth(payload.market)));
+        // --- FAST PATH: Send real-time updates and RPC response first ---
+        const depth = engine.getDepth(payload.market);
+        await publisher.set(REDIS_KEYS.depth(payload.market), JSON.stringify(depth));
 
         await publishRpcResponse(requestId, true, result);
+        await publishEvent("DEPTH_UPDATED", payload.market, depth);
         await publishEvent("ORDER_CANCELLED", payload.market, { ...result, userId: payload.userId });
+
+        // --- SLOW PATH: Persist to DB in the background ---
+        (async () => {
+            try {
+                await prisma.$queryRaw`
+                    UPDATE "Order" SET "filledQuantity" = ${result.executedQty.toString()}, "status" = 'CANCELLED', "updatedAt" = ${new Date()} WHERE "id" = ${payload.orderId}
+                `;
+
+                const balances = engine.getBalances(payload.userId);
+                for (const [asset, bal] of Object.entries(balances)) {
+                    const balance = bal as { available: number; locked: number };
+                    await prisma.$queryRaw`
+                        INSERT INTO "Balance" ("id", "userId", "asset", "available", "locked")
+                        VALUES (gen_random_uuid(), ${payload.userId}, ${asset}, ${balance.available.toString()}, ${balance.locked.toString()})
+                        ON CONFLICT ("userId", "asset") DO UPDATE SET "available" = ${balance.available.toString()}, "locked" = ${balance.locked.toString()}
+                    `;
+                }
+            } catch (dbError) {
+                console.error("Delayed DB persistence error (CANCEL):", dbError);
+            }
+        })();
 
     } else if (type === "DEPOSIT") {
         await engine.ensureUserLoaded(payload.userId);

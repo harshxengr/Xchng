@@ -11,6 +11,7 @@ const MM_REDIS_KEYS = {
     control: (market: string) => `mm-bot:control:${market}`,
     status: (market: string) => `mm-bot:status:${market}`
 };
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "xchng_secret_123";
 
 // Create Redis client inline
 const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
@@ -148,7 +149,10 @@ async function runMarketLoop(market: string) {
             for (const orderId of Array.from(currentOrders)) {
                 const response = await fetch(`${API_URL}/order`, {
                     method: "DELETE",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { 
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${INTERNAL_SECRET}`
+                    },
                     body: JSON.stringify({ market, orderId, userId })
                 });
 
@@ -159,14 +163,24 @@ async function runMarketLoop(market: string) {
                 }
             }
 
-            // 3. Place a new ladder (1 buy, 1 sell for simplicity)
-            const spread = 0.01; // 1%
-            const bidOrderId = await placeOrder(market, userId, "buy", price * (1 - spread), 1);
-            const askOrderId = await placeOrder(market, userId, "sell", price * (1 + spread), 1);
-            currentOrders.add(bidOrderId);
-            currentOrders.add(askOrderId);
-            stats.lastCyclePlaced += 2;
-            stats.totalQuotesPlaced += 2;
+            // 3. Place a new ladder (3 levels for a more realistic look)
+            const levels = 3;
+            const spreadBps = 50; // 0.5%
+            const spacingBps = 25; // 0.25% between levels
+
+            for (let i = 1; i <= levels; i++) {
+                const bidPrice = price * (1 - (spreadBps + (i - 1) * spacingBps) / 10000);
+                const askPrice = price * (1 + (spreadBps + (i - 1) * spacingBps) / 10000);
+
+                const bidId = await placeOrder(market, userId, "buy", bidPrice, i);
+                const askId = await placeOrder(market, userId, "sell", askPrice, i);
+
+                currentOrders.add(bidId);
+                currentOrders.add(askId);
+                stats.lastCyclePlaced += 2;
+                stats.totalQuotesPlaced += 2;
+            }
+
             stats.successCount += 1;
             stats.consecutiveErrorCount = 0;
             stats.lastSuccessAt = Date.now();
@@ -223,7 +237,10 @@ function getActiveOrders(market: string) {
 async function placeOrder(market: string, userId: string, side: string, price: number, quantity: number) {
     const response = await fetch(`${API_URL}/order`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${INTERNAL_SECRET}`
+        },
         body: JSON.stringify({ market, userId, side, price, quantity })
     });
     const body = await response.json().catch(() => null);
@@ -257,7 +274,10 @@ async function ensureInventory(market: string, userId: string, referencePrice: n
 async function deposit(userId: string, asset: string, amount: number) {
     const response = await fetch(`${API_URL}/deposit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${INTERNAL_SECRET}`
+        },
         body: JSON.stringify({ userId, asset, amount })
     });
 

@@ -6,7 +6,6 @@ import * as serverEnv from "@workspace/env/server";
 const prisma = database.prisma ?? database.default?.prisma;
 const env = serverEnv.env ?? serverEnv.default?.env;
 
-// Redis channels - inline as per junior dev style
 const REDIS_CHANNELS = {
   EVENTS: "engine:events",
 };

@@ -63,10 +63,10 @@ export function ResetPasswordForm() {
 
     if (!token) {
         return (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+            <div className="rounded-md border border-rose-500/25 bg-rose-500/10 p-4 text-sm text-rose-200">
                 Invalid or missing reset token. Please request a new password reset link.
                 <div className="mt-4">
-                    <a href="/forgot-password" className="text-red-700 font-medium hover:underline">
+                    <a href="/forgot-password" className="font-medium text-slate-100 underline-offset-4 hover:underline">
                         Go back to forgot password
                     </a>
                 </div>
@@ -76,14 +76,14 @@ export function ResetPasswordForm() {
 
     if (success) {
         return (
-            <div className="text-center py-4">
-                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="py-4 text-center">
+                <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full border border-emerald-400/25 bg-emerald-400/10">
+                    <svg className="size-6 text-emerald-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                 </div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-2">Password reset successful</h2>
-                <p className="text-sm text-gray-500">
+                <h2 className="mb-2 text-lg font-semibold text-white">Password reset successful</h2>
+                <p className="text-sm leading-6 text-slate-400">
                     Your password has been reset. You will be redirected to the sign-in page momentarily.
                 </p>
             </div>
@@ -92,9 +92,9 @@ export function ResetPasswordForm() {
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                    New Password
+            <div className="space-y-2">
+                <label htmlFor="password" className="text-sm text-slate-300">
+                    New password
                 </label>
                 <input
                     id="password"
@@ -103,13 +103,13 @@ export function ResetPasswordForm() {
                     required
                     disabled={isLoading}
                     placeholder="Min. 8 characters"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:bg-gray-50"
+                    className="h-11 w-full rounded-md border border-white/10 bg-transparent px-3 text-sm text-white outline-none transition-colors placeholder:text-slate-600 focus:border-slate-400 disabled:opacity-50"
                 />
             </div>
 
-            <div>
-                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                    Confirm New Password
+            <div className="space-y-2">
+                <label htmlFor="confirmPassword" className="text-sm text-slate-300">
+                    Confirm new password
                 </label>
                 <input
                     id="confirmPassword"
@@ -117,21 +117,21 @@ export function ResetPasswordForm() {
                     type="password"
                     required
                     disabled={isLoading}
-                    placeholder="••••••••"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:bg-gray-50"
+                    placeholder="Repeat password"
+                    className="h-11 w-full rounded-md border border-white/10 bg-transparent px-3 text-sm text-white outline-none transition-colors placeholder:text-slate-600 focus:border-slate-400 disabled:opacity-50"
                 />
             </div>
 
             {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-600">{error}</p>
+                <div className="rounded-md border border-rose-500/25 bg-rose-500/10 px-3 py-2">
+                    <p className="text-sm text-rose-200">{error}</p>
                 </div>
             )}
 
             <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex h-11 w-full items-center justify-center rounded-md bg-white px-4 text-sm font-semibold text-slate-950 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
                 {isLoading ? "Resetting..." : "Reset password"}
             </button>

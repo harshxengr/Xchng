@@ -2,17 +2,17 @@ import { SignUpForm } from "@/components/auth/sign-up-form";
 
 export default function SignUpPage() {
     return (
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-8 shadow-2xl backdrop-blur-xl">
-            <div className="mb-8 text-center">
-                <h1 className="text-3xl font-bold tracking-tight text-white">Get Started</h1>
-                <p className="mt-2 text-sm text-slate-400">
-                    Join thousands of traders on the most advanced exchange
+        <div className="animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200 rounded-lg border border-white/10 bg-white/[0.03] p-6 shadow-2xl shadow-black/30">
+            <div className="mb-8">
+                <h1 className="text-2xl font-semibold tracking-tight text-white">Create account</h1>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Start trading with a secure Xchng account.
                 </p>
             </div>
             <SignUpForm />
-            <p className="mt-8 text-center text-sm text-slate-500">
+            <p className="mt-8 text-sm text-slate-500">
                 Already have an account?{" "}
-                <a href="/sign-in" className="font-semibold text-blue-400 hover:text-blue-300 transition-colors">
+                <a href="/sign-in" className="font-medium text-slate-100 underline-offset-4 hover:underline">
                     Sign in
                 </a>
             </p>

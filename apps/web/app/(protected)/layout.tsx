@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/auth-session";
+import { AppTopNav } from "@/components/AppTopNav";
 
 export default async function ProtectedLayout({
   children,
@@ -6,7 +7,17 @@ export default async function ProtectedLayout({
   children: React.ReactNode;
 }) {
   // Full DB session validation. Redirects to /sign-in if invalid.
-  await requireSession();
+  const session = await requireSession();
 
-  return <>{children}</>;
+  return (
+    <>
+      <AppTopNav
+        user={{
+          name: session.user.name ?? null,
+          email: session.user.email,
+        }}
+      />
+      {children}
+    </>
+  );
 }

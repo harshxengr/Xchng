@@ -79,13 +79,23 @@ type CancelOrderInput = {
     orderId: string;
 };
 
-const API_URL = env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
-const WS_URL = env.NEXT_PUBLIC_WS_URL || "ws://localhost:4001";
+const API_URL = 
+    process.env.NEXT_PUBLIC_API_URL || 
+    env.NEXT_PUBLIC_API_URL || 
+    "http://localhost:4000/api/v1";
+
+const WS_URL = 
+    process.env.NEXT_PUBLIC_WS_URL || 
+    env.NEXT_PUBLIC_WS_URL || 
+    "ws://localhost:4001";
 
 export function getWsUrl() { return WS_URL; }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, init);
+    const res = await fetch(url, {
+        ...init,
+        credentials: "include",
+    });
     const data = await res.json();
     if (!res.ok) {
         const message = typeof data?.error === "string" ? data.error : "Request failed";
@@ -150,3 +160,12 @@ export async function cancelOrder(input: CancelOrderInput) {
         body: JSON.stringify(input)
     });
 }
+
+export async function deposit(userId: string, asset: string, amount: number) {
+    return fetchJson<{ success: boolean; error?: string }>(`${API_URL}/deposit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, asset, amount })
+    });
+}
+

@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { Engine } from "../trade/Engine.js";
 
 describe("Engine", () => {
+  beforeEach(() => {
+    process.env.MM_MARKETS = "TATA_INR";
+  });
+
   it("places a sell order on the book when there is no matching buyer", () => {
     const engine = new Engine();
 

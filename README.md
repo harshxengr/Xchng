@@ -1,56 +1,82 @@
-Xchng is a distributed crypto exchange monorepo built with performance and simplicity in mind.
+# Xchng - High Performance Crypto Exchange
 
-## Architecture
+Xchng is a distributed cryptocurrency exchange platform built as a high-performance monorepo. It leverages a modern stack to handle order matching, real-time data streaming, and persistent storage with high reliability.
 
-- **apps/web**: Next.js frontend with Better Auth integration.
-- **apps/api-server**: Express API for order placement, communicating with the engine via Redis.
-- **apps/engine**: High-performance matching engine worker.
-- **apps/db-worker**: Subscribes to engine events and persists state to PostgreSQL.
-- **apps/ws**: Standalone WebSocket service for real-time orderbook, trade, and ticker updates.
-- **packages/database**: Raw `pg` pool connection for shared DB access.
-- **packages/exchange-store**: Direct SQL-based store for all trading logic.
-- **packages/redis**: Shared Redis client and channel constants.
+## 🚀 Features
 
-## Getting Started
+- **High-Performance Matching Engine**: In-memory order matching with Redis-based command queuing.
+- **Real-Time Data Streaming**: Standalone WebSocket server for live orderbook, trade, and ticker updates.
+- **Distributed Architecture**: Decoupled services for matching, API, DB persistence, and frontend.
+- **Automated Market Making**: Built-in MM bot to provide liquidity and realistic trading volume.
+- **Modern Tech Stack**: Next.js 15, Turbo, Prisma, Redis, PostgreSQL, and Tailwind CSS.
+- **Secure Authentication**: Integrated with Better Auth for robust user management.
 
-### 1. Environment Setup
+## 🏗️ Project Structure
 
-Copy the example environment file and fill in required values:
+- `apps/web`: Modern Next.js frontend with a premium dark-themed trading interface.
+- `apps/engine`: The core matching engine that processes limit and market orders.
+- `apps/api-server`: RESTful API gateway for order placement and data retrieval.
+- `apps/ws`: WebSocket service for low-latency market data broadcasting.
+- `apps/db-worker`: Dedicated worker for asynchronous database persistence of trades and orders.
+- `apps/mm-bot`: Automated market maker bot for liquidity provisioning.
+- `packages/database`: Shared database access layer using Prisma and PostgreSQL.
+- `packages/ui`: Shared UI component library.
+
+## 🛠️ Getting Started
+
+### 1. Prerequisites
+
+- [Node.js](https://nodejs.org/) (v20+)
+- [pnpm](https://pnpm.io/)
+- [Docker](https://www.docker.com/)
+
+### 2. Environment Setup
+
+Copy the example environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-### 2. Infrastructure Startup
+### 3. Start Infrastructure & Database
 
-Start the required services (PostgreSQL and Redis) using Docker:
-
-```bash
-pnpm infra:up
-```
-
-### 3. Database Initialization
-
-Initialize the database schema with the provided SQL file:
+Initialize the Redis and PostgreSQL containers, and push the Prisma schema:
 
 ```bash
-pnpm db:setup
+pnpm dev:start
 ```
 
-### 4. Run Development Server
+### 4. Run Development Environment
 
-Start all services in development mode:
+Start all microservices and the web application:
 
 ```bash
 pnpm dev
 ```
 
-## Maintenance Commands
+The application will be available at `http://localhost:3000`.
+
+## 🧪 Development Commands
 
 | Command | Action |
 | --- | --- |
-| `pnpm infra:up` | Starts Postgres & Redis containers in background |
-| `pnpm infra:down` | Stops and removes infrastructure containers |
-| `pnpm db:setup` | Re-initializes database schema (caution: does not drop existing data if using IF NOT EXISTS, but meant for setup) |
-| `pnpm build` | Builds all packages and apps |
-| `pnpm check-types` | Runs type checks across the entire monorepo |
+| `pnpm dev:start` | Starts infrastructure (Docker) and syncs database schema |
+| `pnpm dev` | Starts all services in development mode with hot-reloading |
+| `pnpm build` | Builds all packages and applications for production |
+| `pnpm lint` | Runs ESLint across the monorepo |
+| `pnpm check-types` | Executes TypeScript type checks |
+| `pnpm dev:stop` | Safely stops all containers and development processes |
+
+## 📐 Architecture Diagram
+
+```mermaid
+graph TD
+    Client[Web Client] <--> WS[WebSocket Server]
+    Client <--> API[API Server]
+    API <--> Redis[(Redis)]
+    Redis <--> Engine[Matching Engine]
+    Engine <--> Redis
+    Redis <--> DBW[DB Worker]
+    DBW --> DB[(PostgreSQL)]
+    MM[MM Bot] --> API
+```
