@@ -1,4 +1,5 @@
 export type Side = "buy" | "sell";
+export type OrderType = "limit" | "market";
 
 export type Order = {
     orderId: string;
@@ -47,6 +48,7 @@ export type PlaceOrderInput = {
     market: string;
     userId: string;
     side: Side;
+    orderType?: OrderType;
     price: number;
     quantity: number;
 };

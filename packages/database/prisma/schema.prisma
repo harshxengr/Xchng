@@ -74,6 +74,7 @@ model Order {
   market         String
   userId         String
   side           String
+  orderType      String   @default("limit")
   price          String
   quantity       String
   filledQuantity String   @default("0")

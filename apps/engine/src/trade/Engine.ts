@@ -105,41 +105,65 @@ export class Engine {
 
   placeOrder(input: PlaceOrderInput): PlaceOrderResult {
     const { market, userId, side, price, quantity } = input;
+    const orderType = input.orderType ?? "limit";
     const orderbook = this.mustGetOrderbook(market);
     const [base, quote] = this.splitMarket(market);
+    const normalizedPrice = Number(price);
+    const normalizedQuantity = Number(quantity);
 
-    // Initial check and lock funds
-    this.checkAndLockFunds(userId, base, quote, side, Number(price), Number(quantity));
+    if (!Number.isFinite(normalizedQuantity) || normalizedQuantity <= 0) {
+      throw new Error("Quantity must be greater than 0");
+    }
+    if (orderType === "limit" && (!Number.isFinite(normalizedPrice) || normalizedPrice <= 0)) {
+      throw new Error("Price must be greater than 0");
+    }
+
+    const lockedAmount = orderType === "market"
+      ? this.checkAndLockMarketFunds(userId, orderbook, base, quote, side, normalizedQuantity)
+      : 0;
+
+    if (orderType === "limit") {
+      this.checkAndLockFunds(userId, base, quote, side, normalizedPrice, normalizedQuantity);
+    }
 
     const order: Order = {
       orderId: crypto.randomUUID(),
       userId,
       side,
-      price: Number(price),
-      quantity: Number(quantity),
+      price: orderType === "market"
+        ? side === "buy" ? Number.MAX_SAFE_INTEGER : 0
+        : normalizedPrice,
+      quantity: normalizedQuantity,
       filled: 0
     };
 
-    // Run the matcher
-    const { executedQty, fills } = orderbook.addOrder(order);
+    const { executedQty, fills } = orderbook.addOrder(order, {
+      restUnfilled: orderType === "limit",
+      ignorePrice: orderType === "market"
+    });
 
-    // Update balances based on fills
     this.applyFills(userId, side, base, quote, fills);
     this.recordTrades(market, userId, side, fills);
 
-    // Refund excess locked funds for buy orders if price was lower or order filled
     if (side === "buy") {
-      this.releaseUnusedBuyFunds(userId, quote, Number(price), Number(quantity), executedQty, fills);
+      if (orderType === "market") {
+        this.releaseUnusedMarketBuyFunds(userId, quote, lockedAmount, fills);
+      } else {
+        this.releaseUnusedBuyFunds(userId, quote, normalizedPrice, normalizedQuantity, executedQty, fills);
+      }
+    } else if (orderType === "market") {
+      this.releaseUnfilledMarketSellFunds(userId, base, normalizedQuantity, executedQty);
     }
 
-    const status: "OPEN" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" = executedQty === quantity ? "FILLED" : executedQty > 0 ? "PARTIALLY_FILLED" : "OPEN";
+    const status: "OPEN" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" =
+      executedQty === normalizedQuantity ? "FILLED" : executedQty > 0 ? "PARTIALLY_FILLED" : orderType === "market" ? "CANCELLED" : "OPEN";
     
     return {
       orderId: order.orderId,
       executedQty,
       fills,
       status,
-      remainingQty: quantity - executedQty
+      remainingQty: normalizedQuantity - executedQty
     };
   }
 
@@ -268,6 +292,51 @@ export class Engine {
     }
   }
 
+  private checkAndLockMarketFunds(
+    userId: string,
+    orderbook: Orderbook,
+    base: string,
+    quote: string,
+    side: Side,
+    quantity: number
+  ) {
+    const user = this.getOrCreateUserBalance(userId);
+
+    if (side === "sell") {
+      if (!user[base] || (Number(user[base]!.available) || 0) < quantity) throw new Error("Insufficient base balance");
+      user[base]!.available = (Number(user[base]!.available) || 0) - quantity;
+      user[base]!.locked = (Number(user[base]!.locked) || 0) + quantity;
+      return quantity;
+    }
+
+    const estimatedCost = this.estimateMarketBuyCost(orderbook, userId, quantity);
+    if (estimatedCost <= 0) throw new Error("No liquidity available");
+    if (!user[quote] || (Number(user[quote]!.available) || 0) < estimatedCost) throw new Error("Insufficient quote balance");
+    user[quote]!.available = (Number(user[quote]!.available) || 0) - estimatedCost;
+    user[quote]!.locked = (Number(user[quote]!.locked) || 0) + estimatedCost;
+    return estimatedCost;
+  }
+
+  private estimateMarketBuyCost(orderbook: Orderbook, userId: string, quantity: number) {
+    let remaining = quantity;
+    let cost = 0;
+    const asks = [...orderbook.asks].sort((a, b) => a.price - b.price);
+
+    for (const ask of asks) {
+      if (remaining <= 0) break;
+      if (ask.userId === userId) continue;
+
+      const available = Number(ask.quantity) - Number(ask.filled);
+      const fillQty = Math.min(remaining, available);
+      if (fillQty <= 0) continue;
+
+      cost += fillQty * Number(ask.price);
+      remaining -= fillQty;
+    }
+
+    return cost;
+  }
+
   private releaseUnusedBuyFunds(userId: string, quote: string, price: number, quantity: number, executed: number, fills: Fill[]) {
     const user = this.getOrCreateUserBalance(userId);
     const locked = Number(price) * Number(quantity);
@@ -278,6 +347,24 @@ export class Engine {
       user[quote]!.locked = (Number(user[quote]!.locked) || 0) - refund;
       user[quote]!.available = (Number(user[quote]!.available) || 0) + refund;
     }
+  }
+
+  private releaseUnusedMarketBuyFunds(userId: string, quote: string, lockedAmount: number, fills: Fill[]) {
+    const user = this.getOrCreateUserBalance(userId);
+    const spent = fills.reduce((sum, fill) => sum + Number(fill.price) * Number(fill.qty), 0);
+    const refund = lockedAmount - spent;
+    if (refund > 0) {
+      user[quote]!.locked = (Number(user[quote]!.locked) || 0) - refund;
+      user[quote]!.available = (Number(user[quote]!.available) || 0) + refund;
+    }
+  }
+
+  private releaseUnfilledMarketSellFunds(userId: string, base: string, quantity: number, executed: number) {
+    const user = this.getOrCreateUserBalance(userId);
+    const remaining = quantity - executed;
+    if (remaining <= 0) return;
+    user[base]!.locked = (Number(user[base]!.locked) || 0) - remaining;
+    user[base]!.available = (Number(user[base]!.available) || 0) + remaining;
   }
 
   private mustGetOrderbook(market: string): Orderbook {
