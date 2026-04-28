@@ -14,7 +14,6 @@ const auth = authModule.auth ?? (authModule as typeof authModule & { default?: t
 const app = express();
 const port = env.PORT || 4000;
 
-// Redis channels - inline as per junior dev style
 const REDIS_CHANNELS = {
   COMMANDS: "engine:commands",
 };
@@ -26,14 +25,13 @@ const MM_REDIS_KEYS = {
   control: (market: string) => `mm-bot:control:${market}`,
   status: (market: string) => `mm-bot:status:${market}`,
 };
-const MM_MARKETS = (process.env.MM_MARKETS || "TATA_INR")
+const MM_MARKETS = env.MM_MARKETS
   .split(",")
   .map((market) => market.trim())
   .filter(Boolean);
 
-// Create Redis clients inline
-const redisPublisher = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
-const redisSubscriber = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+const redisPublisher = new Redis(env.REDIS_URL);
+const redisSubscriber = new Redis(env.REDIS_URL);
 type PendingRequest = {
     resolve: (value: unknown) => void;
     reject: (error: Error) => void;
@@ -69,7 +67,7 @@ app.use(cors({
     credentials: true,
 }));
 app.use(express.json());
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "xchng_secret_123";
+const INTERNAL_SECRET = env.INTERNAL_SECRET;
 
 function toWebHeaders(headers: express.Request["headers"]) {
     const result = new Headers();
@@ -83,39 +81,33 @@ function toWebHeaders(headers: express.Request["headers"]) {
     return result;
 }
 
-// Middleware to check for either a valid session or internal secret
 async function validateSession(req: express.Request, res: express.Response, next: express.NextFunction) {
-    // 1. Check for internal secret (for mm-bot)
     const authHeader = req.headers.authorization;
     if (authHeader === `Bearer ${INTERNAL_SECRET}`) {
         return next();
     }
 
-    // 2. Check for Better Auth session
     try {
         const session = await auth.api.getSession({
             headers: toWebHeaders(req.headers),
         });
 
         if (session) {
-            // Ensure the userId in the body matches the session userId
-            if (req.body.userId && req.body.userId !== session.user.id) {
+            const requestedUserId = req.body.userId ?? req.query.userId;
+            if (requestedUserId && requestedUserId !== session.user.id) {
+                console.warn(`[AUTH] Unauthorized userId mismatch: requested=${requestedUserId}, session=${session.user.id}`);
                 return res.status(403).json({ success: false, error: "Unauthorized userId" });
             }
-            // Attach user to request if needed
             (req as any).user = session.user;
             return next();
         }
     } catch (e) {
-        console.error("Session validation error:", e);
+        console.error("[AUTH] Session validation error:", e);
     }
 
     res.status(401).json({ success: false, error: "Authentication required" });
 }
 
-// --- INTERNAL HELPERS ---
-
-// Sends a command to the engine and waits for the response with a request id.
 async function sendCommandToEngine<T>(type: string, payload: any): Promise<T> {
     const requestId = crypto.randomUUID();
     return new Promise<T>((resolve, reject) => {
@@ -130,7 +122,6 @@ async function sendCommandToEngine<T>(type: string, payload: any): Promise<T> {
             reject
         });
 
-        // Push command in Redis list for the matching engine worker.
         redisPublisher.rpush(REDIS_CHANNELS.COMMANDS, JSON.stringify({
             type,
             requestId,
@@ -238,14 +229,14 @@ async function getMmBotStatuses(): Promise<MmBotStatus[]> {
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
-// Orders
 app.post("/api/v1/order", validateSession, async (req, res) => {
     try {
-        const { market, userId, side, price, quantity } = req.body;
+        const { market, userId, side, orderType = "limit", price, quantity } = req.body;
         const result = await sendCommandToEngine("PLACE_ORDER", {
             market,
             userId,
             side,
+            orderType,
             price: Number(price),
             quantity: Number(quantity)
         });
@@ -264,13 +255,14 @@ app.delete("/api/v1/order", validateSession, async (req, res) => {
     }
 });
 
-app.get("/api/v1/order/open", async (req, res) => {
+app.get("/api/v1/order/open", validateSession, async (req, res) => {
     try {
         const { market, userId } = req.query as { market: string, userId: string };
         const orders = await prisma.$queryRaw`
             SELECT * FROM "Order"
             WHERE "market" = ${market}
             AND "userId" = ${userId}
+            AND "orderType" = 'limit'
             AND "status" IN ('OPEN', 'PARTIALLY_FILLED')
             ORDER BY "createdAt" ASC
         ` as any[];
@@ -278,6 +270,7 @@ app.get("/api/v1/order/open", async (req, res) => {
             orderId: o.id,
             userId: o.userId,
             side: o.side,
+            orderType: o.orderType,
             price: Number(o.price),
             quantity: Number(o.quantity),
             filled: Number(o.filledQuantity)
@@ -287,7 +280,7 @@ app.get("/api/v1/order/open", async (req, res) => {
     }
 });
 
-app.get("/api/v1/order/history", async (req, res) => {
+app.get("/api/v1/order/history", validateSession, async (req, res) => {
     try {
         const { userId, market, limit = "50" } = req.query as any;
         let query = `SELECT * FROM "Order" WHERE 1=1`;
@@ -302,7 +295,6 @@ app.get("/api/v1/order/history", async (req, res) => {
     }
 });
 
-// Market Data
 app.get("/api/v1/depth", async (req, res) => {
     try {
         const { symbol } = req.query as { symbol: string };
@@ -354,8 +346,7 @@ app.get("/api/v1/tickers", async (req, res) => {
     }
 });
 
-// User
-app.get("/api/v1/balances", async (req, res) => {
+app.get("/api/v1/balances", validateSession, async (req, res) => {
     try {
         const { userId } = req.query as { userId: string };
         let balances = await prisma.$queryRaw`
@@ -419,7 +410,7 @@ app.get("/api/v1/mm-bot/status", async (_req, res) => {
     }
 });
 
-app.post("/api/v1/mm-bot/paused", async (req, res) => {
+app.post("/api/v1/mm-bot/paused", validateSession, async (req, res) => {
     try {
         const { botId, paused } = req.body as { botId?: string; paused?: boolean };
         if (!botId || typeof paused !== "boolean") {
@@ -441,7 +432,7 @@ app.post("/api/v1/mm-bot/paused", async (req, res) => {
     }
 });
 
-app.post("/api/v1/mm-bot/control", async (req, res) => {
+app.post("/api/v1/mm-bot/control", validateSession, async (req, res) => {
     try {
         const { botId, paused } = req.body as { botId?: string; paused?: boolean };
         if (!botId || typeof paused !== "boolean") {
@@ -462,8 +453,6 @@ app.post("/api/v1/mm-bot/control", async (req, res) => {
         res.status(400).json({ success: false, error: e.message });
     }
 });
-
-// --- SERVER START ---
 
 app.listen(port, () => {
     console.log(`API Server running on port ${port}`);

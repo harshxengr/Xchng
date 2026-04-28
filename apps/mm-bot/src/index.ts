@@ -1,20 +1,22 @@
 import { Redis } from "ioredis";
-import * as envPackage from "@workspace/env";
+import * as envPackage from "@workspace/env/server";
 
 const env = envPackage.env ?? envPackage.default?.env;
 
-// --- CONFIGURATION (Direct from process.env) ---
 const API_URL = env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
-const MARKETS = (process.env.MM_MARKETS || "TATA_INR").split(",").map(m => m.trim());
-const LOOP_INTERVAL = parseInt(process.env.MM_LOOP_INTERVAL_MS || "5000");
+const MARKETS = env.MM_MARKETS.split(",").map(m => m.trim()).filter(Boolean);
+const LOOP_INTERVAL = env.MM_LOOP_INTERVAL_MS;
+const LEVELS = env.MM_LEVELS;
+const BASE_QUANTITY = env.MM_BASE_QUANTITY;
+const SPREAD_BPS = env.MM_SPREAD_BPS;
+const LEVEL_SPACING_BPS = env.MM_LEVEL_SPACING_BPS;
 const MM_REDIS_KEYS = {
     control: (market: string) => `mm-bot:control:${market}`,
     status: (market: string) => `mm-bot:status:${market}`
 };
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "xchng_secret_123";
+const INTERNAL_SECRET = env.INTERNAL_SECRET;
 
-// Create Redis client inline
-const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+const redis = new Redis(env.REDIS_URL);
 const seededInventory = new Set<string>();
 const activeOrderIds = new Map<string, Set<string>>();
 
@@ -110,10 +112,6 @@ async function publishStatus(market: string, price: number, paused: boolean) {
     await redis.set(MM_REDIS_KEYS.status(market), JSON.stringify(payload));
 }
 
-/**
- * Simplified Market Maker Bot.
- * It periodically checks the price and places a ladder of buy/sell orders.
- */
 async function runMarketLoop(market: string) {
     const userId = `mm-${market.toLowerCase()}`;
     console.log(`[MM-BOT] Starting loop for ${market} as ${userId}`);
@@ -127,7 +125,6 @@ async function runMarketLoop(market: string) {
         stats.lastCycleCancelled = 0;
 
         try {
-            // 1. Get current market state
             const tickerRes = await fetch(`${API_URL}/ticker?symbol=${market}`);
             const ticker = await tickerRes.json();
             const price = parseFloat(ticker.lastPrice) || 100;
@@ -143,8 +140,6 @@ async function runMarketLoop(market: string) {
 
             await ensureInventory(market, userId, price);
 
-            // 2. Cancel orders this process placed in the running engine.
-            // A more advanced dev would only cancel if price moved, but this is fine for a demo.
             const currentOrders = getActiveOrders(market);
             for (const orderId of Array.from(currentOrders)) {
                 const response = await fetch(`${API_URL}/order`, {
@@ -163,17 +158,13 @@ async function runMarketLoop(market: string) {
                 }
             }
 
-            // 3. Place a new ladder (3 levels for a more realistic look)
-            const levels = 3;
-            const spreadBps = 50; // 0.5%
-            const spacingBps = 25; // 0.25% between levels
+            for (let i = 1; i <= LEVELS; i++) {
+                const quantity = BASE_QUANTITY * i;
+                const bidPrice = price * (1 - (SPREAD_BPS + (i - 1) * LEVEL_SPACING_BPS) / 10000);
+                const askPrice = price * (1 + (SPREAD_BPS + (i - 1) * LEVEL_SPACING_BPS) / 10000);
 
-            for (let i = 1; i <= levels; i++) {
-                const bidPrice = price * (1 - (spreadBps + (i - 1) * spacingBps) / 10000);
-                const askPrice = price * (1 + (spreadBps + (i - 1) * spacingBps) / 10000);
-
-                const bidId = await placeOrder(market, userId, "buy", bidPrice, i);
-                const askId = await placeOrder(market, userId, "sell", askPrice, i);
+                const bidId = await placeOrder(market, userId, "buy", bidPrice, quantity);
+                const askId = await placeOrder(market, userId, "sell", askPrice, quantity);
 
                 currentOrders.add(bidId);
                 currentOrders.add(askId);

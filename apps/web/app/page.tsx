@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, BarChart3, ShieldCheck, Zap } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { AppTopNav } from "@/components/AppTopNav";
 import { getSession } from "@/lib/auth-session";
@@ -17,86 +17,63 @@ export default async function HomePage() {
     <main className="min-h-screen bg-[#070a11] text-white selection:bg-emerald-500/30">
       <AppTopNav user={user} />
       
-      {/* Hero Section - Single Section Design */}
-      <section className="relative flex min-h-[calc(100vh-64px)] flex-col items-center justify-center overflow-hidden px-4 py-20 text-center">
-        {/* Background Gradients */}
-        <div className="absolute top-1/4 -left-20 size-96 rounded-full bg-emerald-500/10 blur-[120px]" />
-        <div className="absolute bottom-1/4 -right-20 size-96 rounded-full bg-blue-500/10 blur-[120px]" />
+      <section className="relative flex min-h-[calc(100vh-64px)] flex-col items-center justify-center overflow-hidden px-4 text-center">
+        <div className="absolute inset-0 z-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
         
-        <div className="relative z-10 mx-auto max-w-4xl">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/5 px-4 py-1.5 text-xs font-semibold tracking-wide text-emerald-400">
-            <Zap className="size-3" />
-            <span>Next Generation Crypto Exchange</span>
+        <div className="absolute top-1/2 left-1/2 -z-10 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-500/10 blur-[140px]" />
+        
+        <div className="relative z-10 mx-auto max-w-5xl pt-10">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/5 px-4 py-1.5 text-sm font-medium text-emerald-400">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+            Live Exchange
           </div>
-          
-          <h1 className="mb-6 text-5xl font-black tracking-tight sm:text-7xl lg:text-8xl">
-            Trade with <span className="bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">Confidence.</span>
+
+          <h1 className="mb-8 text-7xl font-black tracking-tight sm:text-8xl lg:text-9xl">
+            <span className="bg-gradient-to-b from-white to-white/40 bg-clip-text text-transparent">XCHNG</span>
+            <span className="text-emerald-500">.</span>
           </h1>
           
-          <p className="mx-auto mb-10 max-w-2xl text-lg text-slate-400 sm:text-xl">
-            The world's most advanced digital asset exchange. Fast, secure, and built for everyone. Experience seamless trading with zero compromise.
+          <p className="mx-auto mb-12 max-w-2xl text-lg font-light text-slate-400 sm:text-2xl">
+            The next generation of <span className="text-white font-normal">digital asset trading</span>. 
+            High performance, zero compromise.
           </p>
           
-          <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+          <div className="flex flex-col items-center justify-center gap-6 sm:flex-row">
             {session ? (
               <Link href="/markets">
-                <Button size="lg" className="h-14 rounded-2xl bg-emerald-500 px-8 text-base font-bold text-slate-950 hover:bg-emerald-400">
-                  Go to Markets
+                <Button size="lg" className="h-16 rounded-full bg-emerald-500 px-10 text-lg font-bold text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all hover:scale-105 hover:bg-emerald-400 hover:shadow-[0_0_30px_rgba(16,185,129,0.5)]">
+                  Enter Exchange
                   <ArrowRight className="ml-2 size-5" />
                 </Button>
               </Link>
             ) : (
-              <>
-                <Link href="/sign-up">
-                  <Button size="lg" className="h-14 rounded-2xl bg-emerald-500 px-8 text-base font-bold text-slate-950 hover:bg-emerald-400">
-                    Get Started Now
-                    <ArrowRight className="ml-2 size-5" />
-                  </Button>
-                </Link>
-                <Link href="/markets">
-                  <Button size="lg" variant="outline" className="h-14 rounded-2xl border-white/10 bg-white/5 px-8 text-base font-bold text-white hover:bg-white/10">
-                    View Live Markets
-                  </Button>
-                </Link>
-              </>
+              <Link href="/sign-up">
+                <Button size="lg" className="h-16 rounded-full bg-emerald-500 px-10 text-lg font-bold text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all hover:scale-105 hover:bg-emerald-400 hover:shadow-[0_0_30px_rgba(16,185,129,0.5)]">
+                  Start Trading
+                  <ArrowRight className="ml-2 size-5" />
+                </Button>
+              </Link>
             )}
           </div>
-          
-          {/* Simple Feature Bar */}
-          <div className="mt-20 grid grid-cols-1 gap-8 border-t border-white/5 pt-12 sm:grid-cols-3">
-            <div className="flex items-center justify-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-white/5 border border-white/10">
-                <Zap className="size-5 text-emerald-400" />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-bold">Ultra-Fast</p>
-                <p className="text-xs text-slate-500">100k+ TPS matching engine</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-white/5 border border-white/10">
-                <ShieldCheck className="size-5 text-blue-400" />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-bold">Secure</p>
-                <p className="text-xs text-slate-500">Bank-grade encryption</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-white/5 border border-white/10">
-                <BarChart3 className="size-5 text-purple-400" />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-bold">Analytics</p>
-                <p className="text-xs text-slate-500">Real-time market insights</p>
-              </div>
-            </div>
-          </div>
         </div>
-        
-        {/* Subtle Bottom Glow */}
-        <div className="absolute bottom-0 h-px w-full bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent" />
       </section>
+
+      <footer className="relative z-10 py-10 text-center border-t border-white/5">
+        <p className="text-sm text-slate-500">
+          © 2026 Xchng. Built by{" "}
+          <Link 
+            href="https://harshsaini.vercel.app/" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-emerald-500 hover:text-emerald-400 font-medium transition-colors"
+          >
+            Harsh Saini
+          </Link>
+        </p>
+      </footer>
     </main>
   );
 }

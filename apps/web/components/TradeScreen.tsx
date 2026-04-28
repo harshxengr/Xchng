@@ -196,7 +196,6 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
   const quoteBalance = balances[quoteAsset] ?? EMPTY_BALANCE;
   const baseBalance = balances[baseAsset] ?? EMPTY_BALANCE;
   
-  // For market orders, we use a 5% slippage buffer to ensure the order fills against the book
   const calculatedPrice = orderType === "market" 
     ? (side === "buy" ? (bestAsk || currentPrice || 1) * 1.05 : (bestBid || currentPrice || 1) * 0.95) 
     : Number(price);
@@ -248,11 +247,16 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
     ws.onmessage = (event) => {
       const parsed: unknown = JSON.parse(event.data);
       if (isWsDepthMessage(parsed)) setDepth(parsed.data);
-      if (isWsTradeMessage(parsed)) setTrades((prev) => [parsed.data, ...prev].slice(0, 250));
+      if (isWsTradeMessage(parsed)) {
+        setTrades((prev) => [parsed.data, ...prev].slice(0, 250));
+        if (activeUserId) {
+          void getBalances(activeUserId).then(setBalances).catch(() => {});
+        }
+      }
       if (isWsTickerMessage(parsed)) setTicker(parsed.data);
     };
     return () => ws.close();
-  }, [market]);
+  }, [market, activeUserId]);
 
   async function onPlaceOrder() {
     try {
@@ -274,8 +278,8 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
         market,
         userId: activeUserId,
         side,
+        orderType,
         quantity: Number(quantity),
-        // backend currently accepts price only; for market orders we execute at best level
         price: calculatedPrice
       });
       setMessage(`${side.toUpperCase()} ${orderType.toUpperCase()} order placed`);

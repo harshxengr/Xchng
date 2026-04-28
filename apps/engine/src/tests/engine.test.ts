@@ -157,6 +157,133 @@ describe("Engine", () => {
     expect(buyer.TATA?.available).toBe(1002);
   });
 
+  it("fills a market buy against the best asks without resting unfilled quantity", () => {
+    const engine = new Engine();
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "2",
+      side: "sell",
+      price: 100,
+      quantity: 2
+    });
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "2",
+      side: "sell",
+      price: 105,
+      quantity: 3
+    });
+
+    const result = engine.placeOrder({
+      market: "TATA_INR",
+      userId: "1",
+      side: "buy",
+      orderType: "market",
+      price: 0,
+      quantity: 10
+    });
+
+    expect(result.status).toBe("PARTIALLY_FILLED");
+    expect(result.executedQty).toBe(5);
+    expect(result.remainingQty).toBe(5);
+    expect(result.fills.map((fill) => ({ price: fill.price, qty: fill.qty }))).toEqual([
+      { price: 100, qty: 2 },
+      { price: 105, qty: 3 }
+    ]);
+
+    const depth = engine.getDepth("TATA_INR");
+    expect(depth.asks).toEqual([]);
+    expect(depth.bids).toEqual([]);
+
+    const buyer = engine.getBalances("1");
+    expect(buyer.TATA?.available).toBe(1005);
+    expect(buyer.INR?.available).toBe(999485);
+    expect(buyer.INR?.locked).toBe(0);
+  });
+
+  it("fills a market sell against the best bids without resting unfilled quantity", () => {
+    const engine = new Engine();
+
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "1",
+      side: "buy",
+      price: 100,
+      quantity: 2
+    });
+    engine.placeOrder({
+      market: "TATA_INR",
+      userId: "1",
+      side: "buy",
+      price: 95,
+      quantity: 3
+    });
+
+    const result = engine.placeOrder({
+      market: "TATA_INR",
+      userId: "2",
+      side: "sell",
+      orderType: "market",
+      price: 0,
+      quantity: 10
+    });
+
+    expect(result.status).toBe("PARTIALLY_FILLED");
+    expect(result.executedQty).toBe(5);
+    expect(result.remainingQty).toBe(5);
+    expect(result.fills.map((fill) => ({ price: fill.price, qty: fill.qty }))).toEqual([
+      { price: 100, qty: 2 },
+      { price: 95, qty: 3 }
+    ]);
+
+    const depth = engine.getDepth("TATA_INR");
+    expect(depth.asks).toEqual([]);
+    expect(depth.bids).toEqual([]);
+
+    const seller = engine.getBalances("2");
+    expect(seller.TATA?.available).toBe(995);
+    expect(seller.TATA?.locked).toBe(0);
+    expect(seller.INR?.available).toBe(1_000_485);
+  });
+
+  it("cancels an unfilled market sell immediately and unlocks funds", () => {
+    const engine = new Engine();
+
+    const result = engine.placeOrder({
+      market: "TATA_INR",
+      userId: "2",
+      side: "sell",
+      orderType: "market",
+      price: 0,
+      quantity: 10
+    });
+
+    expect(result.status).toBe("CANCELLED");
+    expect(result.executedQty).toBe(0);
+    expect(result.remainingQty).toBe(10);
+    expect(engine.getDepth("TATA_INR")).toEqual({ bids: [], asks: [] });
+
+    const seller = engine.getBalances("2");
+    expect(seller.TATA?.available).toBe(1000);
+    expect(seller.TATA?.locked).toBe(0);
+  });
+
+  it("throws when a market buy has no external liquidity", () => {
+    const engine = new Engine();
+
+    expect(() =>
+      engine.placeOrder({
+        market: "TATA_INR",
+        userId: "1",
+        side: "buy",
+        orderType: "market",
+        price: 0,
+        quantity: 1
+      })
+    ).toThrow("No liquidity available");
+  });
+
   it("cancels a sell order and unlocks remaining base asset", () => {
     const engine = new Engine();
 

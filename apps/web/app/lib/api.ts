@@ -12,6 +12,7 @@ export type OpenOrder = {
     orderId: string;
     userId: string;
     side: "buy" | "sell";
+    orderType?: "limit" | "market";
     price: number;
     quantity: number;
     filled: number;
@@ -71,6 +72,7 @@ type PlaceOrderInput = {
     market: string;
     userId: string;
     side: "buy" | "sell";
+    orderType?: "limit" | "market";
     price: number;
     quantity: number;
 };
@@ -93,6 +95,7 @@ export function getWsUrl() { return WS_URL; }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     const res = await fetch(url, {
+        cache: "no-store",
         ...init,
         credentials: "include",
     });
@@ -120,17 +123,17 @@ export async function getTickers(): Promise<Ticker[]> {
     return fetchJson<Ticker[]>(`${API_URL}/tickers`);
 }
 
-export async function getBalances(userId: string): Promise<UserBalance> {
-    return fetchJson<UserBalance>(`${API_URL}/balances?userId=${userId}`);
+export async function getBalances(userId: string, init?: RequestInit): Promise<UserBalance> {
+    return fetchJson<UserBalance>(`${API_URL}/balances?userId=${userId}`, { cache: "no-store", ...init });
 }
 
-export async function getOpenOrders(market: string, userId: string): Promise<OpenOrder[]> {
-    return fetchJson<OpenOrder[]>(`${API_URL}/order/open?market=${market}&userId=${userId}`);
+export async function getOpenOrders(market: string, userId: string, init?: RequestInit): Promise<OpenOrder[]> {
+    return fetchJson<OpenOrder[]>(`${API_URL}/order/open?market=${market}&userId=${userId}`, init);
 }
 
-export async function getOrderHistory(userId: string, market: string, limit?: number): Promise<OrderHistoryEntry[]> {
+export async function getOrderHistory(userId: string, market: string, limit?: number, init?: RequestInit): Promise<OrderHistoryEntry[]> {
     const url = `${API_URL}/order/history?userId=${userId}&market=${market}${limit ? `&limit=${limit}` : ''}`;
-    return fetchJson<OrderHistoryEntry[]>(url);
+    return fetchJson<OrderHistoryEntry[]>(url, init);
 }
 
 export async function getMmBotStatuses(): Promise<MmBotStatus[]> {
@@ -168,4 +171,3 @@ export async function deposit(userId: string, asset: string, amount: number) {
         body: JSON.stringify({ userId, asset, amount })
     });
 }
-

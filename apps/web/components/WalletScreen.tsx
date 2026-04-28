@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { 
   Wallet, 
-  ArrowUpRight, 
   ArrowDownLeft, 
   ArrowRightLeft,
   Loader2,
@@ -83,17 +82,25 @@ export function WalletScreen({ balances: initialBalances, tickers, sessionUser }
   const [searchQuery, setSearchQuery] = useState("");
 
   const assetData = useMemo(() => {
-    return Object.entries(balances)
-      .filter(([asset]) => asset.toLowerCase().includes(searchQuery.toLowerCase()))
-      .map(([asset, balance]) => {
-      // Find a price for this asset. If it's a quote asset like INR or USDT, price is 1 (relative to itself).
-      // For TATA, we look for TATA_INR or TATA_USDT.
+    const allAssets = new Set<string>();
+    tickers.forEach((t) => {
+      if (t.symbol) {
+        const [base, quote] = t.symbol.split("_");
+        if (base) allAssets.add(base);
+        if (quote) allAssets.add(quote);
+      }
+    });
+    Object.keys(balances).forEach((a) => allAssets.add(a));
+
+    return Array.from(allAssets)
+      .filter((asset) => asset.toLowerCase().includes(searchQuery.toLowerCase()))
+      .map((asset) => {
+        const balance = balances[asset] || { available: 0, locked: 0 };
       const ticker = tickers.find(t => t.symbol === `${asset}_INR` || t.symbol === `${asset}_USDT`);
       let price = 1;
       if (ticker) {
         price = Number(ticker.lastPrice);
       } else if (asset === "TATA") {
-        // Fallback for TATA if ticker not found (e.g. initial state)
         price = 500;
       }
       
@@ -109,7 +116,11 @@ export function WalletScreen({ balances: initialBalances, tickers, sessionUser }
         price,
         isQuote: asset === "INR" || asset === "USDT"
       };
-    }).sort((a, b) => b.valueBase - a.valueBase);
+    }).sort((a, b) => {
+      if (b.valueBase !== a.valueBase) return b.valueBase - a.valueBase;
+      if (b.isQuote !== a.isQuote) return b.isQuote ? 1 : -1;
+      return a.asset.localeCompare(b.asset);
+    });
   }, [balances, tickers, searchQuery]);
 
   const totalValueINR = useMemo(() => {

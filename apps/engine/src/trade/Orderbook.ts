@@ -7,22 +7,28 @@ export class Orderbook {
 
   constructor(public base: string, public quote: string) {}
 
-  addOrder(order: Order): { executedQty: number; fills: Fill[] } {
-    return order.side === "buy" ? this.match(order, this.asks, true) : this.match(order, this.bids, false);
+  addOrder(order: Order, options: { restUnfilled?: boolean; ignorePrice?: boolean } = {}): { executedQty: number; fills: Fill[] } {
+    return order.side === "buy"
+      ? this.match(order, this.asks, true, options)
+      : this.match(order, this.bids, false, options);
   }
 
-  match(order: Order, opposites: Order[], isBuy: boolean): { executedQty: number; fills: Fill[] } {
+  match(
+    order: Order,
+    opposites: Order[],
+    isBuy: boolean,
+    options: { restUnfilled?: boolean; ignorePrice?: boolean } = {}
+  ): { executedQty: number; fills: Fill[] } {
     let executedQty = 0;
     const fills: Fill[] = [];
+    const restUnfilled = options.restUnfilled ?? true;
 
-    // Sort opposites: for buy, asks should be lowest first. for sell, bids should be highest first.
     opposites.sort((a, b) => isBuy ? a.price - b.price : b.price - a.price);
 
     for (const opp of opposites) {
       if (executedQty >= order.quantity) break;
-      if (isBuy ? opp.price > order.price : opp.price < order.price) break;
+      if (!options.ignorePrice && (isBuy ? opp.price > order.price : opp.price < order.price)) break;
 
-      // Self-trading prevention
       if (opp.userId === order.userId) continue;
 
       const qty = Math.min(order.quantity - executedQty, opp.quantity - opp.filled);
@@ -48,10 +54,10 @@ export class Orderbook {
     // Clean up filled orders from opposite book
     if (isBuy) {
       this.asks = this.asks.filter(o => o.filled < o.quantity);
-      if (order.filled < order.quantity) this.bids.push(order);
+      if (restUnfilled && order.filled < order.quantity) this.bids.push(order);
     } else {
       this.bids = this.bids.filter(o => o.filled < o.quantity);
-      if (order.filled < order.quantity) this.asks.push(order);
+      if (restUnfilled && order.filled < order.quantity) this.asks.push(order);
     }
 
     return { executedQty, fills };
