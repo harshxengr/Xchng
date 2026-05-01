@@ -35,15 +35,6 @@ export class Engine {
       .filter(Boolean);
 
     mmMarkets.forEach((m) => this.createMarket(m));
-
-    // Default balances for tests - will be replaced by DB loading in production
-    mmMarkets.forEach(m => {
-      const [base, quote] = this.splitMarket(m);
-      this.deposit("1", quote, 1_000_000);
-      this.deposit("1", base, 1_000);
-      this.deposit("2", quote, 1_000_000);
-      this.deposit("2", base, 1_000);
-    });
   }
 
   createMarket(market: string) {
