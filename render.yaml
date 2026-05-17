@@ -23,19 +23,24 @@ services:
       - key: REDIS_URL
         sync: false
       - key: BETTER_AUTH_SECRET
-        sync: false
-      - key: BETTER_AUTH_URL
-        sync: false
+        generateValue: true
       - key: INTERNAL_SECRET
-        sync: false
+        generateValue: true
+      # Placeholders until Vercel is deployed — update in Render dashboard after you have real URLs
+      - key: BETTER_AUTH_URL
+        value: https://placeholder.vercel.app
       - key: NEXT_PUBLIC_APP_URL
-        sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
+        value: https://placeholder.vercel.app
+      - key: NEXT_PUBLIC_API_URL
+        value: https://placeholder.onrender.com/api/v1
+      - key: NEXT_PUBLIC_WS_URL
+        value: wss://placeholder.onrender.com
       - key: OPERATOR_EMAILS
-        sync: false
+        value: admin@example.com
+      - key: GOOGLE_CLIENT_ID
+        value: ""
+      - key: GOOGLE_CLIENT_SECRET
+        value: ""
       - key: MM_MARKETS
         value: TATA_INR
       - key: MM_LOOP_INTERVAL_MS
