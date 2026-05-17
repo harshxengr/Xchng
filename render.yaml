@@ -1,0 +1,53 @@
+# Render Blueprint — unified backend monolith (api-server + ws + engine + db-worker + mm-bot)
+# Frontend (apps/web) deploys separately on Vercel — see apps/web/vercel.json
+#
+# Prerequisites (free tier):
+#   - PostgreSQL: Neon or Supabase → DATABASE_URL
+#   - Redis: Upstash → REDIS_URL
+#   - Vercel app URL → NEXT_PUBLIC_APP_URL, BETTER_AUTH_URL
+
+services:
+  - type: web
+    name: xchng-backend
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        sync: false
+      - key: BETTER_AUTH_URL
+        sync: false
+      - key: INTERNAL_SECRET
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: OPERATOR_EMAILS
+        sync: false
+      - key: MM_MARKETS
+        value: TATA_INR
+      - key: MM_LOOP_INTERVAL_MS
+        value: "8000"
+      - key: MM_LEVELS
+        value: "3"
+      - key: MM_BASE_QUANTITY
+        value: "2"
+      - key: MM_SPREAD_BPS
+        value: "50"
+      - key: MM_LEVEL_SPACING_BPS
+        value: "25"
+      # Set after first deploy (or use Render dashboard) — prod-runner also derives these from RENDER_EXTERNAL_URL:
+      # NEXT_PUBLIC_API_URL=https://xchng-backend.onrender.com/api/v1
+      # NEXT_PUBLIC_WS_URL=wss://xchng-backend.onrender.com

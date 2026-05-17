@@ -9,7 +9,10 @@
     "dev:start": "pnpm dev:infra && pnpm dev:db",
     "dev:stop": "docker compose down; pkill -f '[t]sx.*watch' || true; pkill -f '[n]ext dev' || true; pkill -f '[t]urbo run dev' || true",
     "build": "dotenv -- turbo run build",
+    "build:backend": "dotenv -- turbo run build --filter=api-server...",
     "start": "dotenv -- turbo run start",
+    "start:backend": "dotenv -- pnpm db:push && pnpm --filter api-server start",
+    "db:push": "dotenv -- pnpm --filter @workspace/database db:push",
     "lint": "turbo run lint",
     "check-types": "dotenv -- turbo run check-types"
   },

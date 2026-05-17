@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Redis } from "ioredis";
 import * as envPackage from "@workspace/env/server";
 
@@ -278,8 +280,18 @@ async function deposit(userId: string, asset: string, amount: number) {
     }
 }
 
-function start() {
+export function startMmBot() {
     MARKETS.forEach(runMarketLoop);
 }
 
-start();
+function isMainModule(metaUrl: string): boolean {
+    const entry = process.argv[1];
+    if (!entry) {
+        return false;
+    }
+    return path.resolve(fileURLToPath(metaUrl)) === path.resolve(entry);
+}
+
+if (isMainModule(import.meta.url)) {
+    startMmBot();
+}

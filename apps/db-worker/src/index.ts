@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Redis } from "ioredis";
 import * as database from "@workspace/database";
 import type { EngineEvent } from "@workspace/types";
@@ -14,7 +16,7 @@ const REDIS_CHANNELS = {
 const redisUrl = env.REDIS_URL || "redis://localhost:6379";
 const subscriber = new Redis(redisUrl);
 
-async function start() {
+export async function startDbWorker() {
     await subscriber.subscribe(REDIS_CHANNELS.EVENTS);
     console.log("DB Worker starting. Subscribed to engine events for persistence.");
 
@@ -56,7 +58,17 @@ async function start() {
     });
 }
 
-start().catch(e => {
-    console.error("Critical DB worker failure:", e);
-    process.exit(1);
-});
+function isMainModule(metaUrl: string): boolean {
+    const entry = process.argv[1];
+    if (!entry) {
+        return false;
+    }
+    return path.resolve(fileURLToPath(metaUrl)) === path.resolve(entry);
+}
+
+if (isMainModule(import.meta.url)) {
+    startDbWorker().catch((e) => {
+        console.error("Critical DB worker failure:", e);
+        process.exit(1);
+    });
+}

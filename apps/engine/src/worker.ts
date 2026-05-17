@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Redis } from "ioredis";
 import crypto from "node:crypto";
 import * as database from "@workspace/database";
@@ -26,7 +28,7 @@ const consumer = new Redis(env.REDIS_URL);
 const publisher = new Redis(env.REDIS_URL);
 const engine = new Engine();
 
-async function start() {
+export async function startEngine() {
     console.log("Engine worker starting...");
     await engine.init();
     console.log("Engine state initialized from DB.");
@@ -167,7 +169,17 @@ async function publishEvent(type: string, market: string | undefined, data: any)
     await publisher.publish(REDIS_CHANNELS.EVENTS, JSON.stringify({ type, market, data }));
 }
 
-start().catch(e => {
-    console.error("Critical engine failure:", e);
-    process.exit(1);
-});
+function isMainModule(metaUrl: string): boolean {
+    const entry = process.argv[1];
+    if (!entry) {
+        return false;
+    }
+    return path.resolve(fileURLToPath(metaUrl)) === path.resolve(entry);
+}
+
+if (isMainModule(import.meta.url)) {
+    startEngine().catch((e) => {
+        console.error("Critical engine failure:", e);
+        process.exit(1);
+    });
+}
