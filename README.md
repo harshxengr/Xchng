@@ -115,19 +115,23 @@ Deploying a complex microservices architecture usually costs money, but here is 
 - **PostgreSQL**: Spin up a free serverless database on **Neon.tech** or **Supabase**.
 - **Redis**: Spin up a free serverless Redis cluster on **Upstash**.
 
-### 3. Backend Microservices
-Because Xchng relies on 5 background node services (`engine`, `ws`, `db-worker`, `api-server`, `mm-bot`), PaaS providers like Render or Heroku will limit you.
-- **The "Cheat Code"**: Use **Oracle Cloud Always Free Tier**. Oracle gives you a powerful ARM VPS (up to 4 Cores, 24GB RAM) completely free forever.
-- Clone the repository onto your Oracle VPS.
-- Provide the Neon Postgres URL and Upstash Redis URL in your `.env`.
-- Use the included `Dockerfile` to build the app, and run it using Docker Compose, or run all services natively via `pnpm start`.
+### 3. Backend (Render — unified monolith)
+All five backend processes run in one container via `apps/api-server/src/prod-runner.ts` (single `PORT`, shared HTTP + WebSocket).
+
+1. Push the repo to GitHub and create a **Render Web Service** from `render.yaml` (or connect the repo and use the root `Dockerfile`).
+2. Set secrets in the Render dashboard: `DATABASE_URL`, `REDIS_URL`, `BETTER_AUTH_SECRET`, `INTERNAL_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`, `GOOGLE_*`, `OPERATOR_EMAILS`.
+3. After deploy, set Vercel env vars to your Render URL:
+   - `NEXT_PUBLIC_API_URL=https://<service>.onrender.com/api/v1`
+   - `NEXT_PUBLIC_WS_URL=wss://<service>.onrender.com`
 
 ```bash
-# Production Build & Start
+# Local production-style backend (requires .env with Neon + Upstash URLs)
 pnpm install --frozen-lockfile
-pnpm build
-pnpm start
+pnpm build:backend
+pnpm start:backend
 ```
+
+**Alternative (VPS):** Oracle Cloud Always Free — clone the repo, set `.env`, then `docker build -t xchng . && docker run -p 10000:10000 --env-file .env xchng`.
 
 ---
 

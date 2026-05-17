@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
@@ -12,6 +18,7 @@
   "dependencies": {
     "@workspace/types": "workspace:*",
     "@workspace/database": "workspace:*",
+    "@workspace/env": "workspace:*",
     "ioredis": "^5.3.0"
   },
   "devDependencies": {

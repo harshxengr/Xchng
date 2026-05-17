@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
+    "start": "node dist/prod-runner.js",
+    "start:api": "node dist/server.js",
     "build": "tsc -p tsconfig.json",
     "check-types": "tsc -p tsconfig.json --noEmit"
   },
@@ -15,9 +16,13 @@
     "@workspace/database": "workspace:*",
     "@workspace/env": "workspace:*",
     "cors": "^2.8.5",
+    "db-worker": "workspace:*",
+    "engine": "workspace:*",
     "express": "^4.18.2",
     "ioredis": "^5.3.0",
-    "@workspace/auth": "workspace:*"
+    "mm-bot": "workspace:*",
+    "@workspace/auth": "workspace:*",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
