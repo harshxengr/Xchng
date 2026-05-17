@@ -14,7 +14,7 @@ export default async function HomePage() {
   } : null;
 
   return (
-    <main className="min-h-screen bg-[#070a11] text-white selection:bg-emerald-500/30">
+    <main className="min-h-screen bg-background text-foreground selection:bg-emerald-500/30">
       <AppTopNav user={user} />
       
       <section className="relative flex min-h-[calc(100vh-64px)] flex-col items-center justify-center overflow-hidden px-4 text-center">

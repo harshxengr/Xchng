@@ -68,7 +68,7 @@ export function CandleChart({
   const changeTone = change >= 0 ? "text-emerald-300" : "text-rose-300";
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-[#070b12] p-4">
+    <div className="rounded-2xl border border-white/10 bg-card p-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{interval} candles</p>

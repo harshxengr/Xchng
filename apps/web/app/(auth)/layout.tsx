@@ -9,7 +9,7 @@ export default async function AuthLayout({
   await requireGuest(); // already logged in → redirect to /dashboard
 
   return (
-    <main className="min-h-screen bg-[#070a11] text-white">
+    <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen w-full max-w-[1800px] items-center justify-center px-5 py-10">
         <div className="w-full max-w-sm">
           <Link href="/" className="mb-6 block text-center text-sm font-semibold text-white">

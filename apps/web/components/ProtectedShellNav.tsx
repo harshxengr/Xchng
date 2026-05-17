@@ -56,7 +56,7 @@ export function ProtectedShellNav({ user, canManageMmBot }: ProtectedShellNavPro
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#070b12]/92 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 border-b border-white/10 bg-background/92 backdrop-blur-xl">
       <div className="mx-auto flex min-h-16 w-full max-w-[1600px] flex-col gap-3 px-3 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:px-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <Link href="/markets" className="flex items-center gap-3">
