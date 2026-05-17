@@ -17,7 +17,7 @@ ENV SKIP_ENV_VALIDATION=1
 
 # Prisma client + backend monolith only (skip Next.js web build to save RAM/time)
 RUN pnpm --filter @workspace/database db:generate
-RUN pnpm turbo build --filter=api-server...
+RUN pnpm turbo build --filter=api-server... --concurrency=1
 
 FROM node:20-alpine AS runner
 
