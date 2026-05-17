@@ -36,6 +36,16 @@ function formatNumber(value: number, digits = 2) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
+function getAssetName(symbol: string) {
+  const names: Record<string, string> = {
+    BTC: "Bitcoin",
+    ETH: "Ethereum",
+    USDT: "TetherUS",
+    INR: "Indian Rupee"
+  };
+  return names[symbol] ?? symbol;
+}
+
 export function WalletScreen({ balances: initialBalances, tickers, sessionUser }: WalletScreenProps) {
   const [balances, setBalances] = useState<UserBalance>(initialBalances);
   const [isDepositing, setIsDepositing] = useState<string | null>(null);
@@ -148,15 +158,15 @@ export function WalletScreen({ balances: initialBalances, tickers, sessionUser }
       )}
 
       {/* Summary Card */}
-      <div className="mb-8 rounded-2xl border border-white/10 bg-gradient-to-br from-[#0b111b] to-[#151f2e] p-8 shadow-2xl">
+      <div className="mb-8 rounded-2xl border border-white/10 bg-card p-8 shadow-2xl">
         <div className="flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-500">
               <Wallet className="size-4 text-emerald-400" /> Total Portfolio Value
             </div>
             <div className="flex items-baseline gap-3">
-              <span className="text-5xl font-black tracking-tighter">₹{formatNumber(totalValueINR, 2)}</span>
-              <span className="text-2xl font-semibold text-slate-500">INR</span>
+              <span className="text-4xl font-black tracking-tight">₹{formatNumber(totalValueINR, 2)}</span>
+              <span className="text-xl font-semibold text-slate-500">INR</span>
             </div>
             <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 bg-white/5 w-fit px-2 py-1 rounded-md border border-white/5">
               <Info className="size-3" />
@@ -180,7 +190,7 @@ export function WalletScreen({ balances: initialBalances, tickers, sessionUser }
       </div>
 
       {/* Assets Table */}
-      <div className="rounded-2xl border border-white/10 bg-[#0b111b] shadow-2xl overflow-hidden">
+      <div className="rounded-2xl border border-white/10 bg-card shadow-2xl overflow-hidden">
         <div className="border-b border-white/10 bg-white/[0.02] px-6 py-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4 flex-1">
             <h3 className="text-lg font-bold text-slate-100 shrink-0">Asset Balances</h3>
@@ -222,14 +232,11 @@ export function WalletScreen({ balances: initialBalances, tickers, sessionUser }
                   id={`asset-${item.asset}`}
                   className="group hover:bg-white/[0.02] transition-colors"
                 >
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-4">
-                      <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-white/10 to-white/5 text-sm font-black text-white border border-white/10 group-hover:border-emerald-500/30 transition-colors">
-                        {item.asset}
-                      </div>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
                       <div>
-                        <div className="font-bold text-slate-200">{item.asset}</div>
-                        <div className="text-[10px] text-slate-500 font-medium uppercase">Crypto Asset</div>
+                        <div className="font-semibold text-white">{item.asset}</div>
+                        <div className="mt-0.5 text-[10px] text-slate-500">{getAssetName(item.asset)}</div>
                       </div>
                     </div>
                   </td>

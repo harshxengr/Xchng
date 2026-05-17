@@ -298,7 +298,7 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
   }
 
   return (
-    <main className="min-h-screen bg-[#070a11] text-white">
+    <main className="min-h-screen bg-background text-foreground">
       <AppTopNav user={sessionUser} />
       <div className="mx-auto max-w-[1800px] px-3 py-3">
         <section className="mt-2 flex items-center justify-between border-b border-white/10 px-2 py-2 text-xs">
@@ -332,11 +332,11 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
         {message ? <p className="mt-2 rounded border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200">{message}</p> : null}
 
         <section className="mt-3 grid gap-3 xl:grid-cols-[1.9fr_0.9fr_0.8fr]">
-          <div className="rounded border border-white/10 bg-[#0b111b] p-2">
+          <div className="rounded border border-white/10 bg-card p-2">
             <LightweightCandleChart trades={trades} />
           </div>
 
-          <div className="rounded border border-white/10 bg-[#0b111b] flex flex-col">
+          <div className="rounded border border-white/10 bg-card flex flex-col">
             <div className="border-b border-white/10 px-3 py-2">
               <h3 className="text-sm font-semibold text-slate-200">Orderbook</h3>
             </div>
@@ -381,7 +381,7 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
             </div>
           </div>
 
-          <div className="rounded border border-white/10 bg-[#0b111b] p-3">
+          <div className="rounded border border-white/10 bg-card p-3">
             <div className="mb-3 grid grid-cols-2 gap-2">
               <button onClick={() => setSide("buy")} className={`rounded py-2 text-sm font-medium ${side === "buy" ? "bg-emerald-500 text-slate-950" : "bg-white/5 text-slate-300"}`}>Buy</button>
               <button onClick={() => setSide("sell")} className={`rounded py-2 text-sm font-medium ${side === "sell" ? "bg-rose-500 text-white" : "bg-white/5 text-slate-300"}`}>Sell</button>
@@ -474,7 +474,7 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
           </div>
         </section>
 
-        <section className="mt-3 rounded border border-white/10 bg-[#0b111b] p-2">
+        <section className="mt-3 rounded border border-white/10 bg-card p-2">
           <h3 className="mb-2 px-2 text-sm font-semibold text-slate-200">Markets & Trades</h3>
           <div className="grid gap-2 md:grid-cols-2">
             <div className="rounded border border-white/10 bg-black/20 p-2">

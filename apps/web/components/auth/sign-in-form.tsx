@@ -87,7 +87,7 @@ export function SignInForm() {
           <div className="w-full border-t border-white/10" />
         </div>
         <div className="relative flex justify-center text-xs text-slate-500">
-          <span className="bg-[#070a11] px-3">or</span>
+          <span className="bg-background px-3">or</span>
         </div>
       </div>
 

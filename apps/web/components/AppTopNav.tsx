@@ -10,7 +10,7 @@ type NavUser = {
 
 export function AppTopNav({ user = null }: { user?: NavUser | null }) {
   return (
-    <header className="border-b border-white/10 bg-[#070a11] text-white">
+    <header className="border-b border-white/10 bg-background text-foreground">
       <div className="mx-auto flex max-w-[1800px] items-center justify-between px-5 py-3">
         <nav className="flex items-center gap-6 text-sm">
           <Link href="/" className="font-medium text-white">
