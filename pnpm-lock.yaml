@@ -94,6 +94,9 @@ importers:
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
@@ -144,6 +147,9 @@ importers:
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
