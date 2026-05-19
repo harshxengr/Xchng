@@ -1,44 +1,64 @@
 import { createServer } from "node:http";
 import { attachWebSocketServer } from "@workspace/ws";
-import { startEngine } from "engine/worker";
-import { startDbWorker } from "db-worker";
-import { startMmBot } from "mm-bot";
-import { app } from "./app.js";
+import { startEngine, stopEngine } from "engine/worker";
+import { startDbWorker, stopDbWorker } from "db-worker";
+import { startMmBot, stopMmBot } from "mm-bot";
+import { logger, registerShutdown } from "@workspace/runtime";
+import { app, closeApiResources } from "./app.js";
 import { isMainModule } from "./is-main.js";
-import { applyRenderPublicUrls } from "./render-env.js";
+import { applyRailwayPublicUrls } from "./railway-env.js";
 
 async function startProductionMonolith() {
-    applyRenderPublicUrls();
+  applyRailwayPublicUrls();
 
-    const serverEnv = await import("@workspace/env/server");
-    const env = serverEnv.env ?? serverEnv.default?.env;
-    const port = Number(process.env.PORT || env.PORT || 10000);
-    const server = createServer(app);
+  const serverEnv = await import("@workspace/env/server");
+  const env = serverEnv.env ?? serverEnv.default?.env;
+  const port = Number(process.env.PORT || env.PORT || 8080);
+  const server = createServer(app);
 
-    await attachWebSocketServer(server, env.REDIS_URL);
+  const webSocketServer = await attachWebSocketServer(server, env.REDIS_URL);
 
-    void startEngine().catch((error) => {
-        console.error("Engine failed:", error);
-        process.exit(1);
-    });
+  void startEngine().catch((error) => {
+    logger.error("Engine failed", { error });
+    process.exit(1);
+  });
 
-    void startDbWorker().catch((error) => {
-        console.error("DB worker failed:", error);
-        process.exit(1);
-    });
+  void startDbWorker().catch((error) => {
+    logger.error("DB worker failed", { error });
+    process.exit(1);
+  });
 
-    startMmBot();
+  startMmBot();
 
-    server.listen(port, () => {
-        console.log(`🚀 Production Monolith running on port ${port}`);
-    });
+  server.listen(port, () => {
+    logger.info("Production backend listening", { port });
+  });
+
+  registerShutdown("backend-monolith", async () => {
+    webSocketServer.close();
+    await Promise.allSettled([
+      stopMmBot(),
+      stopDbWorker(),
+      stopEngine(),
+      closeApiResources(),
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      }),
+    ]);
+  });
 }
 
 if (isMainModule(import.meta.url)) {
-    startProductionMonolith().catch((error) => {
-        console.error("Failed to start production monolith:", error);
-        process.exit(1);
-    });
+  startProductionMonolith().catch((error) => {
+    logger.error("Failed to start production backend", { error });
+    process.exit(1);
+  });
 }
 
 export { startProductionMonolith };

@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/src/index.js"
+    }
   },
   "scripts": {
     "db:generate": "prisma generate",
@@ -11,7 +14,9 @@
     "db:deploy": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "lint": "eslint .",
+    "build": "tsc -p tsconfig.json && rm -rf dist/generated && cp -R generated dist/generated"
   },
   "dependencies": {
     "@workspace/env": "workspace:*",
@@ -23,6 +28,8 @@
     "@types/pg": "^8.16.0",
     "prisma": "^7.4.0",
     "@workspace/typescript-config": "workspace:*",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "@workspace/eslint-config": "workspace:*",
+    "eslint": "^9.39.2"
   }
 }

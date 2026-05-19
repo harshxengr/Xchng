@@ -38,6 +38,11 @@ export const serverEnvSchema = z.object({
     MM_MAX_INVENTORY_SKEW_BPS: z.coerce.number().default(40),
 
     OPERATOR_EMAILS: z.string().min(1),
+
+    CORS_ORIGINS: z.string().default(""),
+    RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
+    RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
+    ENGINE_RPC_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
 });
 
 export type ClientEnv = z.infer<typeof clientEnvSchema>;

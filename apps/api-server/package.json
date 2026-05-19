@@ -8,21 +8,25 @@
     "start": "node dist/prod-runner.js",
     "start:api": "node dist/server.js",
     "build": "tsc -p tsconfig.json",
-    "check-types": "tsc -p tsconfig.json --noEmit"
+    "check-types": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint ."
   },
   "dependencies": {
-    "@workspace/ws": "workspace:*",
-    "@workspace/types": "workspace:*",
+    "@workspace/auth": "workspace:*",
     "@workspace/database": "workspace:*",
     "@workspace/env": "workspace:*",
+    "@workspace/types": "workspace:*",
+    "@workspace/ws": "workspace:*",
     "cors": "^2.8.5",
     "db-worker": "workspace:*",
     "engine": "workspace:*",
     "express": "^4.18.2",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
     "ioredis": "^5.3.0",
     "mm-bot": "workspace:*",
-    "@workspace/auth": "workspace:*",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "@workspace/runtime": "workspace:*"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
@@ -31,6 +35,8 @@
     "@workspace/typescript-config": "workspace:*",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "@workspace/eslint-config": "workspace:*",
+    "eslint": "^9.39.2"
   }
 }

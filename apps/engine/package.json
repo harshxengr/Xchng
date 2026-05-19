@@ -21,19 +21,22 @@
     "start": "node dist/worker.js",
     "check-types": "tsc -p tsconfig.json --noEmit",
     "test": "dotenv -e ../../.env -- vitest run",
-    "lint": "echo 'lint not configured for engine'"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@workspace/types": "workspace:*",
     "@workspace/database": "workspace:*",
     "@workspace/env": "workspace:*",
-    "ioredis": "^5.3.0"
+    "ioredis": "^5.3.0",
+    "@workspace/runtime": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@workspace/typescript-config": "workspace:*",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "@workspace/eslint-config": "workspace:*",
+    "eslint": "^9.39.2"
   }
 }

@@ -13,19 +13,23 @@
     "@workspace/env": "workspace:*",
     "ws": "^8.20.0",
     "@workspace/types": "workspace:*",
-    "ioredis": "^5.3.0"
+    "ioredis": "^5.3.0",
+    "@workspace/runtime": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "check-types": "tsc -p tsconfig.json --noEmit"
+    "check-types": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint ."
   },
   "devDependencies": {
     "@workspace/typescript-config": "workspace:*",
     "@types/node": "^22.10.0",
     "@types/ws": "^8.18.1",
     "typescript": "^5.7.3",
-    "tsx": "^4.19.2"
+    "tsx": "^4.19.2",
+    "@workspace/eslint-config": "workspace:*",
+    "eslint": "^9.39.2"
   }
 }

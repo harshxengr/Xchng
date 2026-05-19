@@ -1,9 +1,9 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Redis } from "ioredis";
 import * as database from "@workspace/database";
 import type { EngineEvent } from "@workspace/types";
 import * as serverEnv from "@workspace/env/server";
+import { closeRedisClient, createRedisClient, logger, registerShutdown } from "@workspace/runtime";
 
 const prisma = database.prisma ?? database.default?.prisma;
 const env = serverEnv.env ?? serverEnv.default?.env;
@@ -12,15 +12,19 @@ const REDIS_CHANNELS = {
   EVENTS: "engine:events",
 };
 
-// Create Redis client inline
-const redisUrl = env.REDIS_URL || "redis://localhost:6379";
-const subscriber = new Redis(redisUrl);
+const subscriber = createRedisClient(env.REDIS_URL, "subscriber", "db-worker");
+let started = false;
 
 export async function startDbWorker() {
-    await subscriber.subscribe(REDIS_CHANNELS.EVENTS);
-    console.log("DB Worker starting. Subscribed to engine events for persistence.");
+    if (started) {
+        return;
+    }
 
-    subscriber.on("message", async (channel, raw) => {
+    started = true;
+    await subscriber.subscribe(REDIS_CHANNELS.EVENTS);
+    logger.info("DB worker subscribed to engine events");
+
+    subscriber.on("message", async (_channel, raw) => {
         try {
             const event = JSON.parse(raw) as EngineEvent;
             
@@ -30,7 +34,7 @@ export async function startDbWorker() {
                     VALUES (gen_random_uuid(), ${event.data.tradeId}, ${event.data.market}, ${event.data.price.toString()}, ${event.data.quantity.toString()}, ${event.data.buyerUserId}, ${event.data.sellerUserId}, ${new Date(event.data.timestamp)})
                     ON CONFLICT ("market", "tradeId") DO NOTHING
                 `;
-                console.log(`[DB] Trade saved: ${event.data.tradeId}`);
+                logger.info("Trade saved", { tradeId: event.data.tradeId, market: event.data.market });
             } else if (event.type === "TICKER_UPDATED") {
                 await prisma.tickerSnapshot.create({
                     data: {
@@ -53,9 +57,14 @@ export async function startDbWorker() {
                 `;
             }
         } catch (e) {
-            console.error("DB worker failed to handle event:", e);
+            logger.error("DB worker failed to handle event", { error: e });
         }
     });
+}
+
+export async function stopDbWorker() {
+    await closeRedisClient(subscriber);
+    await prisma.$disconnect();
 }
 
 function isMainModule(metaUrl: string): boolean {
@@ -67,8 +76,9 @@ function isMainModule(metaUrl: string): boolean {
 }
 
 if (isMainModule(import.meta.url)) {
+    registerShutdown("db-worker", stopDbWorker);
     startDbWorker().catch((e) => {
-        console.error("Critical DB worker failure:", e);
+        logger.error("Critical DB worker failure", { error: e });
         process.exit(1);
     });
 }

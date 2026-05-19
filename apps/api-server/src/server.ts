@@ -1,12 +1,26 @@
 import * as serverEnv from "@workspace/env/server";
-import { app } from "./app.js";
+import { logger, registerShutdown } from "@workspace/runtime";
+import { app, closeApiResources } from "./app.js";
 import { isMainModule } from "./is-main.js";
 
 const env = serverEnv.env ?? serverEnv.default?.env;
 
 if (isMainModule(import.meta.url)) {
-    const port = env.PORT || 4000;
-    app.listen(port, () => {
-        console.log(`API Server running on port ${port}`);
+  const port = env.PORT || 4000;
+  const server = app.listen(port, () => {
+    logger.info("API server listening", { port });
+  });
+
+  registerShutdown("api-server", async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
     });
+    await closeApiResources();
+  });
 }

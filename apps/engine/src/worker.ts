@@ -1,14 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Redis } from "ioredis";
 import crypto from "node:crypto";
 import * as database from "@workspace/database";
 import type { 
   EngineCommand, 
-  EngineCommandResult, 
-  EngineEvent,
 } from "@workspace/types";
 import * as serverEnv from "@workspace/env/server";
+import { closeRedisClient, createRedisClient, logger, registerShutdown } from "@workspace/runtime";
 import { Engine } from "./trade/Engine.js";
 
 const prisma = database.prisma ?? database.default?.prisma;
@@ -24,30 +22,43 @@ const REDIS_KEYS = {
   depth: (market: string) => `depth:${market}`,
 };
 
-const consumer = new Redis(env.REDIS_URL);
-const publisher = new Redis(env.REDIS_URL);
+const consumer = createRedisClient(env.REDIS_URL, "consumer", "engine");
+const publisher = createRedisClient(env.REDIS_URL, "publisher", "engine");
 const engine = new Engine();
+let shutdownRequested = false;
 
 export async function startEngine() {
-    console.log("Engine worker starting...");
+    logger.info("Engine worker starting");
     await engine.init();
-    console.log("Engine state initialized from DB.");
+    logger.info("Engine state initialized from DB");
     
-    while (true) {
-        const result = await consumer.blpop(REDIS_CHANNELS.COMMANDS, 0);
+    while (!shutdownRequested) {
+        const result = await consumer.blpop(REDIS_CHANNELS.COMMANDS, 5);
         if (!result) continue;
 
         const [, payload] = result;
-        const command = JSON.parse(payload) as EngineCommand;
-        console.log(`[ENGINE] Received command: ${command.type} (ID: ${command.requestId})`);
+        let command: EngineCommand;
+        try {
+            command = JSON.parse(payload) as EngineCommand;
+        } catch (error) {
+            logger.warn("Invalid engine command payload", { error });
+            continue;
+        }
+
+        logger.info("Engine command received", { type: command.type, requestId: command.requestId });
 
         try {
             await handleCommand(command);
-        } catch (error: any) {
-            console.error(`[ENGINE] Command ${command.type} failed:`, error);
-            await publishRpcResponse(command.requestId, false, undefined, error.message);
+        } catch (error) {
+            logger.error("Engine command failed", { type: command.type, requestId: command.requestId, error });
+            await publishRpcResponse(command.requestId, false, undefined, error instanceof Error ? error.message : "Engine error");
         }
     }
+}
+
+export async function stopEngine() {
+    shutdownRequested = true;
+    await Promise.all([closeRedisClient(consumer), closeRedisClient(publisher)]);
 }
 
 async function handleCommand(command: EngineCommand) {
@@ -137,7 +148,7 @@ async function handleCommand(command: EngineCommand) {
                     `;
                 }
             } catch (dbError) {
-                console.error("Delayed DB persistence error (CANCEL):", dbError);
+                logger.error("Delayed DB persistence error", { command: "CANCEL_ORDER", error: dbError });
             }
         })();
 
@@ -155,7 +166,7 @@ async function handleCommand(command: EngineCommand) {
             `;
         }
 
-        console.log(`[ENGINE] Deposit successful for user ${payload.userId}: ${payload.amount} ${payload.asset}`);
+        logger.info("Deposit successful", { userId: payload.userId, amount: payload.amount, asset: payload.asset });
         await publishRpcResponse(requestId, true, { success: true, balances });
         await publishEvent("BALANCES_UPDATED", undefined, { userId: payload.userId, timestamp: Date.now() });
     }
@@ -178,8 +189,9 @@ function isMainModule(metaUrl: string): boolean {
 }
 
 if (isMainModule(import.meta.url)) {
+    registerShutdown("engine", stopEngine);
     startEngine().catch((e) => {
-        console.error("Critical engine failure:", e);
+        logger.error("Critical engine failure", { error: e });
         process.exit(1);
     });
 }

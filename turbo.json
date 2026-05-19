@@ -1,4 +1,5 @@
 {
+  "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
   "globalEnv": [
     "DATABASE_URL",
@@ -9,6 +10,10 @@
     "NEXT_PUBLIC_APP_URL",
     "NEXT_PUBLIC_API_URL",
     "NEXT_PUBLIC_WS_URL",
+    "CORS_ORIGINS",
+    "RATE_LIMIT_WINDOW_MS",
+    "RATE_LIMIT_MAX",
+    "ENGINE_RPC_TIMEOUT_MS",
     "PORT",
     "WS_PORT",
     "GOOGLE_CLIENT_ID",
@@ -25,7 +30,13 @@
     "MM_TARGET_BASE_RATIO",
     "MM_MAX_INVENTORY_SKEW_BPS",
     "OPERATOR_EMAILS",
-    "NODE_ENV"
+    "LOG_LEVEL",
+    "SERVICE_NAME",
+    "NODE_ENV",
+    "SKIP_ENV_VALIDATION",
+    "RAILWAY_PUBLIC_DOMAIN",
+    "RAILWAY_STATIC_URL",
+    "RAILWAY_SERVICE_NAME"
   ],
   "tasks": {
     "build": {
@@ -46,12 +57,22 @@
     "lint": {
       "dependsOn": [
         "^lint"
-      ]
+      ],
+      "outputs": []
     },
     "check-types": {
       "dependsOn": [
         "^check-types",
         "@workspace/database#db:generate"
+      ],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "coverage/**"
       ]
     },
     "dev": {
@@ -69,9 +90,6 @@
       ],
       "cache": false,
       "persistent": true
-    },
-    "dev:infra": {
-      "cache": false
     },
     "db:generate": {
       "outputs": [

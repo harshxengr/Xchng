@@ -1,13 +1,22 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { Engine } from "../trade/Engine.js";
 
+function createFundedEngine() {
+  const engine = new Engine();
+  for (const userId of ["1", "2"]) {
+    engine.deposit(userId, "TATA", 1000);
+    engine.deposit(userId, "INR", 1_000_000);
+  }
+  return engine;
+}
+
 describe("Engine", () => {
   beforeEach(() => {
     process.env.MM_MARKETS = "TATA_INR";
   });
 
   it("places a sell order on the book when there is no matching buyer", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     const result = engine.placeOrder({
       market: "TATA_INR",
@@ -26,7 +35,7 @@ describe("Engine", () => {
   });
 
   it("locks seller base asset when placing a sell order", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     engine.placeOrder({
       market: "TATA_INR",
@@ -42,7 +51,7 @@ describe("Engine", () => {
   });
 
   it("matches a buy order against an existing sell order", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     engine.placeOrder({
       market: "TATA_INR",
@@ -73,7 +82,7 @@ describe("Engine", () => {
   });
 
   it("updates buyer and seller balances after a trade", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     engine.placeOrder({
       market: "TATA_INR",
@@ -104,7 +113,7 @@ describe("Engine", () => {
   });
 
   it("keeps remaining buy quantity on the book if partially filled", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     engine.placeOrder({
       market: "TATA_INR",
@@ -132,7 +141,7 @@ describe("Engine", () => {
   });
 
   it("refunds extra locked quote balance when buy executes at a better price", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     engine.placeOrder({
       market: "TATA_INR",
@@ -158,7 +167,7 @@ describe("Engine", () => {
   });
 
   it("fills a market buy against the best asks without resting unfilled quantity", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     engine.placeOrder({
       market: "TATA_INR",
@@ -203,7 +212,7 @@ describe("Engine", () => {
   });
 
   it("fills a market sell against the best bids without resting unfilled quantity", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     engine.placeOrder({
       market: "TATA_INR",
@@ -248,7 +257,7 @@ describe("Engine", () => {
   });
 
   it("cancels an unfilled market sell immediately and unlocks funds", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     const result = engine.placeOrder({
       market: "TATA_INR",
@@ -270,7 +279,7 @@ describe("Engine", () => {
   });
 
   it("throws when a market buy has no external liquidity", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     expect(() =>
       engine.placeOrder({
@@ -285,7 +294,7 @@ describe("Engine", () => {
   });
 
   it("cancels a sell order and unlocks remaining base asset", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     const order = engine.placeOrder({
       market: "TATA_INR",
@@ -310,7 +319,7 @@ describe("Engine", () => {
   });
 
   it("cancels a partially filled sell order and unlocks only remaining quantity", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     const order = engine.placeOrder({
       market: "TATA_INR",
@@ -340,7 +349,7 @@ describe("Engine", () => {
   });
 
   it("throws if buyer has insufficient quote balance", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     expect(() =>
       engine.placeOrder({
@@ -354,7 +363,7 @@ describe("Engine", () => {
   });
 
   it("throws if seller has insufficient base balance", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     expect(() =>
       engine.placeOrder({
@@ -368,7 +377,7 @@ describe("Engine", () => {
   });
 
   it("returns open orders for a specific user", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     engine.placeOrder({
       market: "TATA_INR",
@@ -396,13 +405,13 @@ describe("Engine", () => {
   });
 
   it("throws when canceling an unknown order", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     expect(() => engine.cancelOrder("TATA_INR", "missing")).toThrow("Order not found");
   });
 
   it("records trade history after a match", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     engine.placeOrder({
       market: "TATA_INR",
@@ -433,7 +442,7 @@ describe("Engine", () => {
   });
 
   it("records multiple trades in reverse chronological order", async () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     engine.placeOrder({
       market: "TATA_INR",
@@ -477,7 +486,7 @@ describe("Engine", () => {
   });
 
   it("returns empty ticker values when market has no trades", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     const ticker = engine.getTicker("TATA_INR");
 
@@ -496,7 +505,7 @@ describe("Engine", () => {
   });
 
   it("builds ticker stats from recorded trades", async () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
 
     engine.placeOrder({
       market: "TATA_INR",
@@ -547,7 +556,7 @@ describe("Engine", () => {
   });
 
   it("returns all tickers for all markets", () => {
-    const engine = new Engine();
+    const engine = createFundedEngine();
     engine.createMarket("INFY_INR");
 
     const tickers = engine.getTickers();

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Redis } from "ioredis";
 import * as envPackage from "@workspace/env/server";
+import { closeRedisClient, createRedisClient, logger, registerShutdown, sleep } from "@workspace/runtime";
 
 const env = envPackage.env ?? envPackage.default?.env;
 
@@ -18,7 +18,8 @@ const MM_REDIS_KEYS = {
 };
 const INTERNAL_SECRET = env.INTERNAL_SECRET;
 
-const redis = new Redis(env.REDIS_URL);
+const redis = createRedisClient(env.REDIS_URL, "cache", "mm-bot");
+let shutdownRequested = false;
 const seededInventory = new Set<string>();
 const activeOrderIds = new Map<string, Set<string>>();
 
@@ -116,10 +117,10 @@ async function publishStatus(market: string, price: number, paused: boolean) {
 
 async function runMarketLoop(market: string) {
     const userId = `mm-${market.toLowerCase()}`;
-    console.log(`[MM-BOT] Starting loop for ${market} as ${userId}`);
+    logger.info("MM bot market loop starting", { market, userId });
     await waitForApi(market);
 
-    while (true) {
+    while (!shutdownRequested) {
         const startedAt = Date.now();
         const stats = getStats(market);
         stats.loopCount += 1;
@@ -182,7 +183,7 @@ async function runMarketLoop(market: string) {
             stats.lastLoopDurationMs = Date.now() - startedAt;
             await publishStatus(market, price, false);
 
-            console.log(`[MM-BOT] ${market} updated. Ref price: ${price}`);
+            logger.info("MM bot market updated", { market, referencePrice: price });
         } catch (e) {
             stats.errorCount += 1;
             stats.consecutiveErrorCount += 1;
@@ -190,7 +191,7 @@ async function runMarketLoop(market: string) {
             stats.lastRefreshAt = Date.now();
             stats.lastLoopDurationMs = Date.now() - startedAt;
             await publishStatus(market, 0, false);
-            console.error(`[MM-BOT] ${market} loop error:`, e);
+            logger.error("MM bot loop error", { market, error: e });
         }
 
         await sleep(LOOP_INTERVAL);
@@ -198,7 +199,7 @@ async function runMarketLoop(market: string) {
 }
 
 async function waitForApi(market: string) {
-    while (true) {
+    while (!shutdownRequested) {
         try {
             const response = await fetch(`${API_URL}/ticker?symbol=${market}`);
             if (response.ok) {
@@ -212,9 +213,6 @@ async function waitForApi(market: string) {
     }
 }
 
-function sleep(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 function getActiveOrders(market: string) {
     const existing = activeOrderIds.get(market);
@@ -281,7 +279,18 @@ async function deposit(userId: string, asset: string, amount: number) {
 }
 
 export function startMmBot() {
-    MARKETS.forEach(runMarketLoop);
+    shutdownRequested = false;
+    MARKETS.forEach((market) => {
+        void runMarketLoop(market).catch((error) => {
+            logger.error("MM bot market loop crashed", { market, error });
+            process.exit(1);
+        });
+    });
+}
+
+export async function stopMmBot() {
+    shutdownRequested = true;
+    await closeRedisClient(redis);
 }
 
 function isMainModule(metaUrl: string): boolean {
@@ -293,5 +302,6 @@ function isMainModule(metaUrl: string): boolean {
 }
 
 if (isMainModule(import.meta.url)) {
+    registerShutdown("mm-bot", stopMmBot);
     startMmBot();
 }
