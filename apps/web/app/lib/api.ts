@@ -165,7 +165,7 @@ export async function cancelOrder(input: CancelOrderInput) {
 }
 
 export async function deposit(userId: string, asset: string, amount: number) {
-    return fetchJson<{ success: boolean; error?: string }>(`${API_URL}/deposit`, {
+    return fetchJson<{ success: boolean; error?: string; balances?: UserBalance }>(`${API_URL}/deposit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, asset, amount })

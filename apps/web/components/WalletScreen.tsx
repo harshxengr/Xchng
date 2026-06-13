@@ -75,10 +75,14 @@ export function WalletScreen({ balances: initialBalances, tickers, sessionUser }
     try {
       setIsDepositing(asset);
       setMessage(null);
-      await deposit(sessionUser.id, asset, amount);
+      const result = await deposit(sessionUser.id, asset, amount);
       
-      const newBalances = await getBalances(sessionUser.id);
-      setBalances(newBalances);
+      if (result.balances) {
+        setBalances(result.balances);
+      } else {
+        const newBalances = await getBalances(sessionUser.id);
+        setBalances(newBalances);
+      }
       
       setMessage({ text: `Successfully deposited ${amount} ${asset}`, type: "success" });
       setTimeout(() => setMessage(null), 5000);

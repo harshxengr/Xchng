@@ -116,7 +116,8 @@ async function handleCommand(command: EngineCommand) {
                 userId: fill.otherUserId, 
                 market: payload.market,
                 filledQuantity: fill.makerFilledQuantity, 
-                status: fill.makerStatus 
+                status: fill.makerStatus,
+                timestamp: Date.now()
             });
         }
 

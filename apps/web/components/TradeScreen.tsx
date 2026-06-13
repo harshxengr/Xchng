@@ -237,10 +237,12 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
   useEffect(() => {
     const ws = new WebSocket(getWsUrl());
     ws.onopen = () => {
+      const params = [`depth@${market}`, `trade@${market}`, `ticker@${market}`];
+      if (activeUserId) params.push(`balance@${activeUserId}`);
       ws.send(
         JSON.stringify({
           method: "SUBSCRIBE",
-          params: [`depth@${market}`, `trade@${market}`, `ticker@${market}`]
+          params
         })
       );
     };
@@ -249,11 +251,11 @@ export function TradeScreen({ market, sessionUser = null }: { market: string; se
       if (isWsDepthMessage(parsed)) setDepth(parsed.data);
       if (isWsTradeMessage(parsed)) {
         setTrades((prev) => [parsed.data, ...prev].slice(0, 250));
-        if (activeUserId) {
-          void getBalances(activeUserId).then(setBalances).catch(() => {});
-        }
       }
       if (isWsTickerMessage(parsed)) setTicker(parsed.data);
+      if (hasType(parsed) && parsed.type === "balance" && activeUserId) {
+        void getBalances(activeUserId).then(setBalances).catch(() => {});
+      }
     };
     return () => ws.close();
   }, [market, activeUserId]);

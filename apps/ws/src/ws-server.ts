@@ -117,6 +117,8 @@ async function subscribeToEngineEvents(redisUrl: string) {
         broadcast(`trade@${event.market}`, { type: "trade", symbol: event.market, data: event.data });
       } else if (event.type === "TICKER_UPDATED") {
         broadcast(`ticker@${event.market}`, { type: "ticker", symbol: event.market, data: event.data });
+      } else if (event.type === "BALANCES_UPDATED") {
+        broadcast(`balance@${event.data.userId}`, { type: "balance", userId: event.data.userId, data: event.data });
       }
     } catch (error) {
       logger.warn("Invalid engine event payload", { error });
